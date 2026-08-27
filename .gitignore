@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+wrangler.production.jsonc
+DEPLOY-INFO.md
+*.log
+.DS_Store
+coverage/

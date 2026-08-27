@@ -1,0 +1,156 @@
+import { describe, expect, it } from "vitest";
+import { getAdminHtml } from "../src/ui/admin-html.ts";
+
+describe("admin unified import UI", () => {
+  it("emits syntactically valid inline JavaScript", () => {
+    const html = getAdminHtml();
+    const start = html.indexOf("<script>") + "<script>".length;
+    const end = html.indexOf("</script>", start);
+    const script = html.slice(start, end);
+
+    expect(start).toBeGreaterThan("<script>".length - 1);
+    expect(end).toBeGreaterThan(start);
+    expect(() => new Function(script)).not.toThrow();
+  });
+
+  it("renders one ZIP upload entry using the sealed import contract", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain('id="import-file"');
+    expect(html).toContain('accept=".zip,application/zip"');
+    expect(html).toContain("authenticatedFetch('/api/unified-import'");
+    expect(html).toContain("'Content-Type': 'application/zip'");
+    expect(html).toContain("body: file");
+    expect(html).toContain("credentials: 'same-origin'");
+    expect(html).not.toContain("Authorization");
+    expect(html).not.toContain("sessionStorage");
+    expect(html).not.toContain("multipart/form-data");
+  });
+
+  it("requires confirmation and renders success, errors, and partial commits", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain("confirm('确认导入“'");
+    expect(html).toContain("result.data?.providers");
+    expect(html).toContain("result.data?.committedProviders");
+    expect(html).toContain("部分订阅已提交，随后发生并发冲突");
+    expect(html).toContain("服务器响应格式无效");
+  });
+
+  it("keeps the token out of URLs and visible import output", () => {
+    const html = getAdminHtml();
+    const importBlock = html.slice(
+      html.indexOf("async function doUnifiedImport"),
+    );
+
+    expect(importBlock).not.toContain("?token=");
+    expect(importBlock).not.toContain("URLSearchParams");
+    expect(importBlock).not.toContain("TOKEN + '/api");
+    expect(importBlock).not.toContain("JSON.stringify(TOKEN)");
+  });
+
+  it("exposes unified export and WebDAV sync without the obsolete R2 export", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain("导出通用母包");
+    expect(html).toContain("/api/unified-export");
+    expect(html).toContain("WebDAV 同步");
+    expect(html).toContain("/api/webdav/push");
+    expect(html).not.toContain("/api/export");
+  });
+
+  it("does not expose obsolete manual main config management", () => {
+    const html = getAdminHtml();
+
+    expect(html).not.toContain('data-tab="main-config"');
+    expect(html).not.toContain('id="main-config-yaml"');
+    expect(html).not.toContain("无需维护主配置");
+  });
+
+  it("keeps history actions local and backup cards concise", () => {
+    const html = getAdminHtml();
+    const backup = html.slice(
+      html.indexOf('id="tab-backup"'),
+      html.indexOf("<!-- Add subscription"),
+    );
+
+    expect(html).toContain("下载完整配置");
+    expect(html).toContain(
+      "cachedHistoryEntries = cachedHistoryEntries.filter",
+    );
+    expect(html).toContain("loadHistory({ silent: true })");
+    expect(backup.indexOf("WebDAV 同步")).toBeLessThan(
+      backup.indexOf("导出通用母包"),
+    );
+    expect(backup.indexOf("导出通用母包")).toBeLessThan(
+      backup.indexOf("导入统一母包"),
+    );
+    expect(backup).toContain("导出当前全部订阅的统一母包。");
+    expect(backup).toContain("选择并导入统一母包 ZIP。");
+  });
+
+  it("updates provider views without replacing them with a loading screen", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain("queueMicrotask(() => checkSession())");
+    expect(html).toContain("renderProviders(cachedProviders.filter");
+    expect(html).toContain("loadProviders({ silent: true })");
+    expect(html).toContain("name === 'list' && !providersLoaded");
+    expect(html).toContain("name === 'history' && !historyLoaded");
+    expect(html).toContain("name === 'backup' && !webdavLoaded");
+  });
+
+  it("uses username and password with a short server-side session", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain('autocomplete="username"');
+    expect(html).toContain('autocomplete="current-password"');
+    expect(html).toContain("/api/auth/login");
+    expect(html).toContain("/api/auth/session");
+    expect(html).toContain("/api/auth/logout");
+    expect(html).toContain("显示密码");
+    expect(html).toContain("登录状态最长保留 8 小时");
+    expect(html).toContain("使用提醒");
+    expect(html).toContain("如需共享，请仅提供给你信任的人");
+    expect(html).not.toContain("ADMIN_TOKEN");
+    expect(html).not.toContain("admin_token");
+  });
+
+  it("supports ordered subscriptions and the final copy wording", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain("拖动排序");
+    expect(html).toContain("/api/providers/order");
+    expect(html).toContain("复制 Clash/Shadowrocket 通用配置");
+    expect(html).toContain("顺序已保存");
+    expect(html).toContain("touchstart");
+    expect(html).toContain("document.ontouchmove");
+    expect(html).toContain("target.parentElement.insertBefore");
+    expect(html).toContain("window.matchMedia('(pointer: fine)').matches");
+    expect(html).toContain("max-width: 1600px");
+    expect(html).toContain("padding: 32px 80px");
+    expect(html).toContain("width: 48px");
+    expect(html).toContain(".order-number { display: none; }");
+    expect(html).toContain(
+      "#history-list .btn-group { justify-content: flex-end; }",
+    );
+    expect(html).toContain("elementFromPoint");
+    expect(html).toContain("subscription-card");
+    expect(html).not.toContain("width: fit-content");
+  });
+
+  it("uses the shared User-Agent presets without exposing slug in edit", () => {
+    const html = getAdminHtml();
+    const edit = html.slice(
+      html.indexOf('id="edit-modal"'),
+      html.indexOf('id="meta-modal"'),
+    );
+
+    expect(html).toContain('value="clash-verge/v2.4.5"');
+    expect(html).toContain('value="clash.meta/1.19.20"');
+    expect(html).toContain('value="SlClash clash-verge Platform/android"');
+    expect(html).toContain('value="__custom__"');
+    expect(edit).not.toContain("edit-slug");
+    expect(edit).toContain("订阅地址");
+  });
+});

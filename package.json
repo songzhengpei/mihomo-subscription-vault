@@ -1,0 +1,43 @@
+{
+  "name": "mihomo-subscription-vault",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "deploy:production": "wrangler deploy --config wrangler.production.jsonc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "relay": "node scripts/upstream-relay.mjs",
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "format:check": "prettier --check src/ test/",
+    "format": "prettier --write src/ test/",
+    "generate:admin-password-hash": "node scripts/generate-admin-password-hash.mjs",
+    "cf-typegen": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260708.1",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.0.10",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4",
+    "wrangler": "^4.34.1"
+  },
+  "dependencies": {
+    "@cloudflare/puppeteer": "^1.1.0",
+    "js-yaml": "^4.1.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "INSTANCE_SECRET": {
+        "description": "首次初始化和加密实例配置使用的主密钥。请使用密码管理器生成至少 32 个字符，并妥善保存。"
+      },
+      "SUBSCRIPTION_BUCKET": {
+        "description": "保存订阅快照、配置和加密实例设置的私有 R2 Bucket。"
+      }
+    }
+  }
+}

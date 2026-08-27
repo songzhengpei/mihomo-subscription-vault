@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "mihomo-subscription-vault",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "browser": {
+    "binding": "BROWSER",
+  },
+  "r2_buckets": [
+    {
+      "binding": "SUBSCRIPTION_BUCKET",
+      "bucket_name": "mihomo-subscription-vault",
+    },
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+  },
+  "workers_dev": true,
+}

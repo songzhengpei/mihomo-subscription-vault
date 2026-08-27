@@ -1,0 +1,59 @@
+name: mihomo-subscription-relay
+
+services:
+  relay:
+    image: mihomo-subscription-relay:local
+    pull_policy: build
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mihomo-subscription-relay
+    restart: unless-stopped
+    network_mode: host
+    init: true
+    environment:
+      RELAY_HOST: 127.0.0.1
+      RELAY_PORT: "8788"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:8788/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: mihomo-subscription-relay-tunnel
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      relay:
+        condition: service_healthy
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --protocol
+      - quic
+      - --loglevel
+      - info
+      - run
+      - --token-file
+      - /run/secrets/tunnel-token
+    volumes:
+      - ./tunnel-token:/run/secrets/tunnel-token:ro
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

@@ -1,0 +1,8 @@
+# Required for one-click deployment and first-run setup.
+# Generate at least 32 random characters and keep it private.
+INSTANCE_SECRET=replace-with-a-random-secret-at-least-32-characters-long
+
+# Optional configuration variables
+MAX_SOURCE_BYTES=5242880
+MAX_REDIRECTS=3
+FETCH_TIMEOUT_MS=20000
