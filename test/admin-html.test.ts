@@ -372,6 +372,23 @@ describe("admin LLM credential UI", () => {
     expect(form).toContain("loadProviders({ silent: true })");
   });
 
+  it("inserts the new credential before the server confirms, and rolls back", () => {
+    const html = getAdminHtml();
+    const add = html.slice(
+      html.indexOf("async function saveLlmKey"),
+      html.indexOf("async function saveLlmEdit"),
+    );
+
+    // The row is rendered on the click's tick, before the POST is awaited.
+    expect(add.indexOf("upsertLlmKeyLocal(optimistic)")).toBeLessThan(
+      add.indexOf("await api('/api/llm/keys'"),
+    );
+    // A rejected create must restore the previous state, not drop an existing
+    // credential that happened to share the slug.
+    expect(add).toContain("if (previous) upsertLlmKeyLocal(previous)");
+    expect(add).toContain("else removeLlmKeyLocal(slug)");
+  });
+
   it("titles the viewer with the credential name", () => {
     const html = getAdminHtml();
     const start = html.indexOf("async function openLlmView");

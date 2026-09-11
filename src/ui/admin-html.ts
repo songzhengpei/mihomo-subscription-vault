@@ -1398,7 +1398,7 @@ export function getAdminHtml(): string {
         return;
       }
 
-      showStatus(statusEl, true, '正在更新...');
+      showStatus(statusEl, true, '正在拉取上游订阅并写入快照，请稍候...');
       const res = await api('/api/providers/' + encodeURIComponent(slug) + '/update', {
         method: 'POST',
         body: JSON.stringify({ name, sourceUrl: url, userAgent }),
@@ -1936,6 +1936,18 @@ export function getAdminHtml(): string {
         showStatus(status, false, '请填写所有字段');
         return;
       }
+      // Render the row on the same tick as the click, then reconcile with the
+      // server. R2 round trips cost a few hundred ms each, so waiting for them
+      // before showing anything is what made adding feel slow.
+      const previous = llmKeys.filter((item) => item.slug === slug)[0] || null;
+      const optimistic = {
+        slug: slug,
+        name: name,
+        hint: { last4: apiKey.slice(-4), length: apiKey.length },
+        secretPresent: true,
+        updatedAt: new Date().toISOString(),
+      };
+      upsertLlmKeyLocal(optimistic);
       showStatus(status, true, '正在保存...');
       try {
         const result = await api('/api/llm/keys', {
@@ -1943,21 +1955,19 @@ export function getAdminHtml(): string {
           body: JSON.stringify({ slug: slug, name: name, apiKey: apiKey }),
         });
         if (!result.ok) {
+          // Roll the optimistic row back to whatever was there before.
+          if (previous) upsertLlmKeyLocal(previous);
+          else removeLlmKeyLocal(slug);
           showStatus(status, false, result.error && result.error.message ? result.error.message : '保存失败');
           return;
         }
         document.getElementById('llm-add-name').value = '';
         document.getElementById('llm-add-slug').value = '';
         document.getElementById('llm-add-key').value = '';
-        upsertLlmKeyLocal({
-          slug: slug,
-          name: name,
-          hint: { last4: apiKey.slice(-4), length: apiKey.length },
-          secretPresent: true,
-          updatedAt: new Date().toISOString(),
-        });
         showStatus(status, true, '已添加：' + name);
       } catch (error) {
+        if (previous) upsertLlmKeyLocal(previous);
+        else removeLlmKeyLocal(slug);
         showStatus(status, false, error && error.message ? error.message : '保存失败');
       }
     }
