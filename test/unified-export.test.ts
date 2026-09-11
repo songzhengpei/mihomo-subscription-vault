@@ -1845,5 +1845,32 @@ describe("unified-export", () => {
         false,
       );
     });
+
+    it("L9: llm/ credential objects never enter the archive", async () => {
+      await seedMainConfig(bucket);
+      await seedV1Provider(bucket);
+      // Credentials are stored under their own prefix; the export must stay
+      // structurally blind to them so they cannot reach a WebDAV backup.
+      bucket.store.set("llm/deepseek-main/meta.v1.json", "{}");
+      bucket.store.set(
+        "llm/deepseek-main/secret.v1.enc.json",
+        '{"schemaVersion":1,"ciphertext":"AAAA"}',
+      );
+
+      const res = await callUnifiedExport(bucket);
+      const data = new Uint8Array(await res.arrayBuffer());
+      const files = parseZip(data);
+
+      for (const [name] of files) {
+        expect(name.startsWith("llm/")).toBe(false);
+      }
+      const manifest = JSON.parse(
+        new TextDecoder().decode(files.get("manifest.json")!),
+      );
+      for (const name of Object.keys(manifest.files)) {
+        expect(name.startsWith("llm/")).toBe(false);
+      }
+      expect(manifest.airports).toHaveLength(1);
+    });
   });
 });

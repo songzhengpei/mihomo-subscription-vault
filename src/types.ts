@@ -515,3 +515,84 @@ export interface UnifiedManifest {
   dependencySlugs?: string[];
   dependencies?: UnifiedManifestDependency[];
 }
+
+// --- LLM Credential Vault (Phase 6) ---
+//
+// Deliberately independent from the provider subscription model: these records
+// live under the `llm/` R2 prefix, are never enumerated by the subscription
+// listing/export code paths, and are never part of the unified backup archive.
+
+/** Non-sensitive identifier for a stored key, used only to tell entries apart. */
+export interface LlmSecretHint {
+  last4: string;
+  length: number;
+}
+
+/** AES-GCM envelope persisted at `llm/{slug}/secret.v1.enc.json`. */
+export interface LlmSecretEnvelope {
+  schemaVersion: 1;
+  algorithm: "AES-GCM";
+  kdf: "HKDF-SHA256";
+  info: string;
+  iv: string;
+  ciphertext: string;
+}
+
+/** Decrypted payload of a secret envelope. */
+export interface LlmSecretPlaintext {
+  apiKey: string;
+  extra: Record<string, unknown>;
+}
+
+/** Commit point: readers must verify this hash before decrypting. */
+export interface LlmSecretPointer {
+  key: string;
+  sha256: string;
+  updatedAt: string;
+}
+
+export interface LlmKeyMeta {
+  schemaVersion: 1;
+  slug: string;
+  name: string;
+  provider: string;
+  baseUrl: string;
+  models: string[];
+  notes: string;
+  tags: string[];
+  hint: LlmSecretHint;
+  secret: LlmSecretPointer;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Listing projection. Never carries the key or the ciphertext. */
+export interface LlmKeyListItem {
+  slug: string;
+  name: string;
+  provider: string;
+  baseUrl: string;
+  models: string[];
+  tags: string[];
+  hint: LlmSecretHint;
+  secretPresent: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** `corrupted` means the stored ciphertext no longer matches meta.secret.sha256. */
+export type LlmIntegrityStatus = "ok" | "missing" | "corrupted";
+
+export interface LlmKeyDetail {
+  meta: LlmKeyMeta;
+  integrity: LlmIntegrityStatus;
+}
+
+export type LlmKeyErrorCode =
+  | "INVALID_SLUG"
+  | "INVALID_LLM_PAYLOAD"
+  | "LLM_KEY_NOT_FOUND"
+  | "LLM_KEY_CONFLICT"
+  | "LLM_KEY_CORRUPTED"
+  | "LLM_STORE_UNAVAILABLE"
+  | "LLM_STORE_WRITE_FAILED";

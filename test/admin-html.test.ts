@@ -154,3 +154,46 @@ describe("admin unified import UI", () => {
     expect(edit).toContain("订阅地址");
   });
 });
+
+describe("admin LLM credential UI", () => {
+  it("adds a separate tab without disturbing the subscription table", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain('data-tab="llm"');
+    expect(html).toContain('id="tab-llm"');
+    expect(html).toContain("大模型密钥");
+    expect(html).toContain('id="llm-keys-list"');
+    expect(html).toContain('id="llm-modal"');
+    expect(html).toContain('id="llm-store-note"');
+    // The subscription list keeps its own markup and tab.
+    expect(html).toContain("subscription-card");
+    expect(html).toContain('data-tab="list"');
+  });
+
+  it("keeps the sealed credential rules in the inline script", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain("'/api/llm/keys'");
+    expect(html).toContain("navigator.clipboard");
+    expect(html).toContain("confirm('确认删除“'");
+    expect(html).not.toContain("localStorage");
+    expect(html).not.toContain("Authorization");
+    expect(html).not.toContain("sessionStorage");
+    expect(html).not.toContain("ADMIN_TOKEN");
+    expect(html).not.toContain("admin_token");
+  });
+
+  it("reads plaintext through POST and never through a URL", () => {
+    const html = getAdminHtml();
+    const start = html.indexOf("async function copyLlmKey");
+    const end = html.indexOf("async function removeLlmKey", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const block = html.slice(start, end);
+
+    expect(block).toContain("method: 'POST'");
+    expect(block).toContain("navigator.clipboard.writeText(secret)");
+    expect(block).not.toContain("?apiKey=");
+    expect(block).not.toContain("localStorage");
+  });
+});

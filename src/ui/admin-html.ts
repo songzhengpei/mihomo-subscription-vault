@@ -348,6 +348,7 @@ export function getAdminHtml(): string {
     #history-list td:last-child { text-align: right; }
     #providers-list .btn-group,
     #history-list .btn-group { justify-content: flex-end; }
+    #llm-keys-list .btn-group { justify-content: flex-end; }
 
     .order-cell { white-space: nowrap; }
 
@@ -544,6 +545,7 @@ export function getAdminHtml(): string {
       <button class="tab" data-tab="history">历史版本</button>
       <!-- staging tab hidden — backend APIs preserved, re-add button to restore -->
       <button class="tab" data-tab="backup">导入与导出</button>
+      <button class="tab" data-tab="llm">大模型密钥</button>
     </div>
 
     <div id="tab-list" class="tab-content active">
@@ -621,8 +623,27 @@ export function getAdminHtml(): string {
       </div>
     </div>
 
+    <div id="tab-llm" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">大模型密钥</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button class="btn btn-outline btn-sm" onclick="loadLlmKeys()">刷新</button>
+            <button class="btn btn-primary btn-sm" onclick="openLlmModal()">新增密钥</button>
+          </div>
+        </div>
+        <p style="color:var(--text-dim);font-size:14px;margin-bottom:14px">
+          凭据以 AES-GCM 加密保存在 R2 中，不会出现在统一母包导出与 WebDAV 备份里。
+          此处仅用于人工复制，不提供公开下载地址。
+        </p>
+        <div id="llm-store-note" class="status-msg" role="alert"></div>
+        <div id="llm-keys-list"></div>
+        <div id="llm-status" class="status-msg" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+
     <!-- Add subscription card — always visible below all tabs -->
-    <div class="update-section" style="margin-top:28px">
+    <div id="add-subscription-section" class="update-section" style="margin-top:28px">
       <div class="card">
         <div class="section-title">添加订阅</div>
         <div class="form-group">
@@ -691,6 +712,46 @@ export function getAdminHtml(): string {
       <div class="close-btn">
         <button class="btn btn-outline btn-sm" onclick="closeModal()">关闭</button>
       </div>
+    </div>
+  </div>
+
+  <!-- LLM credential modal -->
+  <div id="llm-modal" class="modal-overlay">
+    <div class="modal">
+      <h3 id="llm-modal-title">新增大模型密钥</h3>
+      <div class="form-group">
+        <label>名称</label>
+        <input id="llm-name" placeholder="DeepSeek 主账号">
+      </div>
+      <div class="form-group">
+        <label>Slug</label>
+        <input id="llm-slug" placeholder="deepseek-main">
+      </div>
+      <div class="form-group">
+        <label>平台标识</label>
+        <input id="llm-provider" placeholder="deepseek">
+      </div>
+      <div class="form-group">
+        <label>API Base URL</label>
+        <input id="llm-base-url" placeholder="https://api.deepseek.com">
+      </div>
+      <div class="form-group">
+        <label>模型（每行一个，可留空）</label>
+        <textarea id="llm-models" rows="3" placeholder="deepseek-chat"></textarea>
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <input id="llm-api-key" type="password" autocomplete="off" placeholder="编辑时留空表示不修改">
+      </div>
+      <div class="form-group">
+        <label>备注（请勿在此填写真实密钥）</label>
+        <input id="llm-notes">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-outline btn-sm" onclick="closeLlmModal()">取消</button>
+        <button class="btn btn-primary btn-sm" onclick="saveLlmKey()">保存</button>
+      </div>
+      <div id="llm-modal-status" class="status-msg"></div>
     </div>
   </div>
 
@@ -781,6 +842,7 @@ export function getAdminHtml(): string {
         providersLoaded = false;
         historyLoaded = false;
         webdavLoaded = false;
+        llmLoaded = false;
         showAuthScreen();
       }
     }
@@ -796,7 +858,17 @@ export function getAdminHtml(): string {
         if (name === 'list' && !providersLoaded) loadProviders();
         if (name === 'history' && !historyLoaded) loadHistory();
         if (name === 'backup' && !webdavLoaded) { webdavLoaded = true; loadWebDAVConfig(); }
+        if (name === 'llm' && !llmLoaded) { llmLoaded = true; loadLlmKeys({ silent: true }); }
 
+      });
+    });
+
+    // The "添加订阅" card sits outside the tab panes; hide it while the LLM
+    // credential tab is active so the two resource types stay visually separate.
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const section = document.getElementById('add-subscription-section');
+        if (section) section.style.display = tab.dataset.tab === 'llm' ? 'none' : '';
       });
     });
 
@@ -1598,6 +1670,212 @@ export function getAdminHtml(): string {
     function esc(s) {
       if (s === null || s === undefined) return '';
       return String(s).replace(/[&<>"'\`=]/g, (c) => ESC_MAP[c]);
+    }
+
+    // --- LLM credential vault ---
+    // Credentials are stored encrypted and are only ever read back through the
+    // explicit reveal action. Plaintext is never persisted in the DOM, in web
+    // storage, or in the URL.
+
+    let llmKeys = [];
+    let llmLoaded = false;
+    let llmEditingSlug = null;
+    let llmRevealTimer = null;
+
+    function setLlmStatus(ok, msg) {
+      showStatus(document.getElementById('llm-status'), ok, msg);
+    }
+
+    function maskedLlmHint(item) {
+      if (!item.secretPresent) return '密文缺失';
+      const hint = item.hint || {};
+      const tail = hint.last4 ? hint.last4 : '****';
+      return '••••••••' + esc(tail);
+    }
+
+    function renderLlmKeys(keys) {
+      const el = document.getElementById('llm-keys-list');
+      if (!keys.length) {
+        el.innerHTML = '<div class="empty">暂无凭据，点击「新增密钥」添加一条。</div>';
+        return;
+      }
+      let html = '<table class="table"><thead><tr>';
+      html += '<th>名称</th><th>平台</th><th>Slug</th><th>模型</th><th>密钥</th><th>更新时间</th><th>操作</th>';
+      html += '</tr></thead><tbody>';
+      for (let index = 0; index < keys.length; index++) {
+        const item = keys[index];
+        const modelCount = item.models && item.models.length ? String(item.models.length) : '-';
+        html += '<tr data-llm-slug="' + esc(item.slug) + '">';
+        html += '<td>' + esc(item.name) + '</td>';
+        html += '<td class="mono">' + esc(item.provider) + '</td>';
+        html += '<td class="mono">' + esc(item.slug) + '</td>';
+        html += '<td>' + modelCount + '</td>';
+        html += '<td class="mono">' + maskedLlmHint(item) + '</td>';
+        html += '<td>' + (item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-') + '</td>';
+        html += '<td><div class="btn-group">';
+        html += '<button class="btn btn-outline btn-sm" onclick="copyLlmKey(\\'' + esc(item.slug) + '\\')">查看并复制</button>';
+        html += '<button class="btn btn-outline btn-sm" onclick="openLlmModal(\\'' + esc(item.slug) + '\\')">编辑</button>';
+        html += '<button class="btn btn-outline btn-sm" onclick="removeLlmKey(\\'' + esc(item.slug) + '\\')">删除</button>';
+        html += '</div></td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      el.innerHTML = html;
+    }
+
+    async function loadLlmKeys(opts) {
+      const silent = !!(opts && opts.silent);
+      if (!silent) setLlmStatus(true, '正在加载…');
+      try {
+        const result = await api('/api/llm/keys');
+        if (!result.ok) {
+          renderLlmKeys([]);
+          setLlmStatus(false, result.error && result.error.message ? result.error.message : '加载失败');
+          return;
+        }
+        llmKeys = (result.data && result.data.keys) || [];
+        llmLoaded = true;
+        renderLlmKeys(llmKeys);
+        const storeNote = document.getElementById('llm-store-note');
+        if (result.data && result.data.storeAvailable === false) {
+          showStatus(storeNote, false, '当前实例没有配置有效的 INSTANCE_SECRET，无法新增或查看密钥。请在 Worker 中设置至少 32 字节的 INSTANCE_SECRET 后重试。');
+        } else {
+          storeNote.className = 'status-msg';
+          storeNote.textContent = '';
+        }
+        if (!silent) setLlmStatus(true, '已加载 ' + llmKeys.length + ' 条凭据');
+      } catch (error) {
+        setLlmStatus(false, error && error.message ? error.message : '加载失败');
+      }
+    }
+
+    function openLlmModal(slug) {
+      llmEditingSlug = slug || null;
+      let editing = null;
+      for (let index = 0; index < llmKeys.length; index++) {
+        if (llmKeys[index].slug === slug) editing = llmKeys[index];
+      }
+      document.getElementById('llm-modal-title').textContent = editing ? '编辑大模型密钥' : '新增大模型密钥';
+      document.getElementById('llm-name').value = editing ? editing.name : '';
+      document.getElementById('llm-slug').value = editing ? editing.slug : '';
+      document.getElementById('llm-slug').disabled = !!editing;
+      document.getElementById('llm-provider').value = editing ? editing.provider : '';
+      document.getElementById('llm-base-url').value = editing ? editing.baseUrl : '';
+      document.getElementById('llm-models').value = editing && editing.models ? editing.models.join('\\n') : '';
+      document.getElementById('llm-api-key').value = '';
+      document.getElementById('llm-notes').value = '';
+      const status = document.getElementById('llm-modal-status');
+      status.className = 'status-msg';
+      status.textContent = '';
+      document.getElementById('llm-modal').classList.add('show');
+    }
+
+    function closeLlmModal() {
+      document.getElementById('llm-api-key').value = '';
+      document.getElementById('llm-modal').classList.remove('show');
+      llmEditingSlug = null;
+    }
+
+    async function saveLlmKey() {
+      const status = document.getElementById('llm-modal-status');
+      const name = document.getElementById('llm-name').value.trim();
+      const slug = document.getElementById('llm-slug').value.trim();
+      const provider = document.getElementById('llm-provider').value.trim();
+      const baseUrl = document.getElementById('llm-base-url').value.trim();
+      const apiKey = document.getElementById('llm-api-key').value.trim();
+      const notes = document.getElementById('llm-notes').value.trim();
+      const models = document.getElementById('llm-models').value
+        .split('\\n')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+      if (!name || !provider || !baseUrl) {
+        showStatus(status, false, '名称、平台标识和 API Base URL 不能为空');
+        return;
+      }
+      const payload = { name: name, provider: provider, baseUrl: baseUrl, models: models, notes: notes };
+      if (apiKey) payload.apiKey = apiKey;
+      showStatus(status, true, '正在保存…');
+      try {
+        let result;
+        if (llmEditingSlug) {
+          result = await api('/api/llm/keys/' + encodeURIComponent(llmEditingSlug), {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+          });
+        } else {
+          if (!slug) {
+            showStatus(status, false, 'Slug 不能为空');
+            return;
+          }
+          if (!apiKey) {
+            showStatus(status, false, '新增时必须填写 API Key');
+            return;
+          }
+          payload.slug = slug;
+          payload.apiKey = apiKey;
+          result = await api('/api/llm/keys', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+          });
+        }
+        if (!result.ok) {
+          showStatus(status, false, result.error && result.error.message ? result.error.message : '保存失败');
+          return;
+        }
+        closeLlmModal();
+        await loadLlmKeys({ silent: true });
+        setLlmStatus(true, '已保存');
+      } catch (error) {
+        showStatus(status, false, error && error.message ? error.message : '保存失败');
+      }
+    }
+
+    async function copyLlmKey(slug) {
+      if (llmRevealTimer) {
+        clearTimeout(llmRevealTimer);
+        llmRevealTimer = null;
+      }
+      try {
+        const result = await api('/api/llm/keys/' + encodeURIComponent(slug) + '/reveal', {
+          method: 'POST',
+        });
+        if (!result.ok) {
+          setLlmStatus(false, result.error && result.error.message ? result.error.message : '读取失败');
+          return;
+        }
+        const secret = result.data && result.data.apiKey ? result.data.apiKey : '';
+        if (!secret) {
+          setLlmStatus(false, '服务器未返回密钥');
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(secret);
+          setLlmStatus(true, '密钥已复制到剪贴板');
+        } catch {
+          setLlmStatus(false, '无法写入剪贴板，请立即手动复制：' + secret);
+        }
+        llmRevealTimer = setTimeout(() => {
+          llmRevealTimer = null;
+          setLlmStatus(true, '明文已清除');
+        }, 30000);
+      } catch (error) {
+        setLlmStatus(false, error && error.message ? error.message : '读取失败');
+      }
+    }
+
+    async function removeLlmKey(slug) {
+      if (!confirm('确认删除“' + slug + '”的凭据？该凭据的密文会被一并删除，且无法恢复。')) return;
+      try {
+        const result = await api('/api/llm/keys/' + encodeURIComponent(slug), { method: 'DELETE' });
+        if (!result.ok) {
+          setLlmStatus(false, result.error && result.error.message ? result.error.message : '删除失败');
+          return;
+        }
+        await loadLlmKeys({ silent: true });
+        setLlmStatus(true, '已删除');
+      } catch (error) {
+        setLlmStatus(false, error && error.message ? error.message : '删除失败');
+      }
     }
 
     queueMicrotask(() => checkSession());

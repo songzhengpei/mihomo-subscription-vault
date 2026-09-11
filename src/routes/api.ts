@@ -29,6 +29,7 @@ import {
   listFiles,
 } from "../services/webdav-client.ts";
 import type { WebDAVConfig } from "../types.ts";
+import { handleLlmApi } from "./llm-api.ts";
 
 function json<T>(data: T, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -75,6 +76,11 @@ export async function handleApi(
   env: Env,
   path: string,
 ): Promise<Response | null> {
+  // LLM credential vault: owns the whole /api/llm/* namespace. Independent of
+  // the provider subscription routes below.
+  const llmResponse = await handleLlmApi(request, env, path);
+  if (llmResponse) return llmResponse;
+
   // POST /api/unified-import — raw Worker v1 ZIP body.
   if (path === "/api/unified-import") {
     const headers = {
