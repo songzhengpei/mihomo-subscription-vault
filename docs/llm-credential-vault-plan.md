@@ -498,6 +498,46 @@ if (name === 'llm' && !llmLoaded) { llmLoaded = true; loadLlmKeys({ silent: true
 
 ---
 
+## 7A. 性能约定（2026-09-11 性能轮）
+
+### 7A.1 R2 往返预算
+
+这些接口的成本几乎完全由 R2 往返次数决定，改动时必须维持下列上限：
+
+| 接口 | 之前的往返 | 现在 | 做法 |
+| --- | --- | --- | --- |
+| `GET /api/providers/{slug}/history` | 2 次 list + 2 次指针 + **每版本一次串行 get** | 1 次指针 + 1 次 list + N 次**有界并发** get | `listVersions` 改为有界并发；去掉 GET 上的冗余 prune |
+| `GET /api/providers` | 每订阅 4 次**同一个** meta + 1 次 source-url，分 3 段串行 | 每订阅 1 次 pointer + 1 次 meta + 1 次 source-url，分 2 段 | `readProviderListEntry` 单遍读取；order 文档与 slug 列表并行 |
+| `GET /api/llm/keys` | 1 次 list + 每凭据 1 次 **HEAD** | 1 次 list + N 次并行 meta get | 一次列举同时得到 slug 与存在的密文键 |
+| `POST /api/llm/keys/{slug}/reveal` | 2 次读同一份密文 + 1 次哈希 | 1 次读 + 1 次哈希 | 校验与解密共用同一份字节 |
+
+**read 路径不得写。** history 曾在 GET 里调用 prune（发布路径 `publishProviderVersion`
+已经 prune），既翻倍了开销又让 GET 产生副作用，已移除。
+
+守卫测试（防止回退）：`test/storage-version-publish.test.ts` 断言版本元数据读取的
+**并发度 > 1**；`test/llm-key-store.test.ts` 断言列表只发 1 次 list 且 **0 次 HEAD**、
+reveal 只读 **1 次**密文。
+
+### 7A.2 前端：所见即所得
+
+| 约定 | 实现 |
+| --- | --- |
+| 刷新立刻出现骨架 | `checkSession()` 先 `showMainScreen()` + 占位，再校验会话；失败才回登录页（`/admin` 本身是无数据的公开 HTML，提前渲染不泄露任何信息） |
+| 点击 tab 不等待 | 认证通过后 `loadAllViews()` 一次性并行预取 providers / credentials，紧随其后预取 history 与 WebDAV 配置 |
+| 增删改同帧生效 | 凭据与订阅的写操作都用返回结果**本地更新列表**（`upsertLlmKeyLocal` / `removeLlmKeyLocal` / `upsertProviderLocal`），随后后台静默对账，不再让用户等第二次往返 |
+| 面板不留白 | `showLoadingPlaceholders()` 保证每个面板在数据到达前都有「加载中...」 |
+
+**注意**：写操作后的本地更新只是乐观呈现，最终仍以服务端为准；因此后台对账调用
+（`loadProviders({ silent: true })` 等）**不得移除**。
+
+### 7A.3 测量方法
+
+从本机经公网测总量会被网络抖动淹没（同一时刻 `/admin` 纯静态页就可能 179–1262 ms）。
+应使用 **TTFB 最小值**（`curl -w %{time_starttransfer}`，多次取最小）来近似服务端耗时，
+并与 `/admin` 基线相减。不要再拿单次总耗时下结论。
+
+---
+
 ## 8. 备份策略
 
 ### 8.1 结论
@@ -797,6 +837,10 @@ R2 中的 `llm/` 数据不被任何主链路引用，**无需清理也不会产�
 
 ## 附：版本变更
 
+- **v7（2026-09-11）** 性能轮。服务端消除 R2 N+1 与串行读（history 约 6–8 倍、订阅列表
+  约 1.7 倍、密钥列表约 3 倍、reveal 少一次读）；移除 GET 上的 prune 写入。前端改为
+  刷新即渲染骨架、认证后并行预取全部 tab、增删改本地同帧生效。新增 7A 性能约定与
+  并发度/读次数守卫测试。
 - **v6（2026-09-11）** 查看弹窗标题栏加入凭据名称（主标题 + `API Key` 小标签两级结构），
   行内按钮改回「查看/复制」以匹配其真实能力（查看 + 弹窗内复制）。
 - **v5（2026-09-11）** 查看弹窗改为最小形态：只显示明文密钥 + 「复制」「关闭」两个按钮，
@@ -815,3 +859,4 @@ R2 中的 `llm/` 数据不被任何主链路引用，**无需清理也不会产�
 - **v1（2026-08-27）** 初稿。
 
 最后更新：2026-08-27
+

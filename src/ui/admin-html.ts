@@ -1152,6 +1152,20 @@ export function getAdminHtml(): string {
       showToast('顺序已保存');
     }
 
+    // Apply an update/add result to the list immediately. The follow-up
+    // loadProviders() only reconciles ordering in the background, so the row no
+    // longer waits on a second round trip after the upstream fetch finishes.
+    function upsertProviderLocal(entry) {
+      let found = false;
+      const next = cachedProviders.map((item) => {
+        if (item.slug !== entry.slug) return item;
+        found = true;
+        return Object.assign({}, item, entry);
+      });
+      if (!found) next.push(entry);
+      renderProviders(next);
+    }
+
     function populateSlugDropdowns(providers) {
       cachedProviders = providers;
       for (const selectId of ['history-slug']) {
@@ -1287,6 +1301,20 @@ export function getAdminHtml(): string {
       if (res.ok) {
         showToast('更新成功' + (res.data.isNew ? '（新版本）' : '（内容未变化）'));
         invalidateSecondaryViews();
+        const d = res.data || {};
+        upsertProviderLocal({
+          slug: slug,
+          name: name,
+          latestVersion: {
+            versionId: d.versionId,
+            sha256: d.sha256,
+            updatedAt: d.updatedAt,
+          },
+          nodeCount: d.nodeCount,
+          sourceHost: d.sourceHost,
+          sourceUrl: sourceUrl,
+          userAgent: userAgent,
+        });
         loadProviders({ silent: true });
       } else {
         alert('更新失败: ' + res.error.message);
@@ -1385,6 +1413,19 @@ export function getAdminHtml(): string {
           (d.isNew ? ' (新版本)' : ' (内容未变化)')
         );
         invalidateSecondaryViews();
+        upsertProviderLocal({
+          slug: slug,
+          name: name,
+          latestVersion: {
+            versionId: d.versionId,
+            sha256: d.sha256,
+            updatedAt: d.updatedAt,
+          },
+          nodeCount: d.nodeCount,
+          sourceHost: d.sourceHost,
+          sourceUrl: url,
+          userAgent: userAgent,
+        });
         loadProviders({ silent: true });
       } else {
         showStatus(statusEl, false, res.error.message);

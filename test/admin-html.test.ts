@@ -351,6 +351,27 @@ describe("admin LLM credential UI", () => {
     expect(remove).not.toContain("loadLlmKeys({ silent: true })");
   });
 
+  it("reflects subscription updates locally too", () => {
+    const html = getAdminHtml();
+    expect(html).toContain("function upsertProviderLocal");
+
+    const quiet = html.slice(
+      html.indexOf("async function quickUpdate"),
+      html.indexOf("// --- Copy links ---"),
+    );
+    expect(quiet).toContain("upsertProviderLocal");
+
+    const form = html.slice(
+      html.indexOf("async function doUpdate"),
+      html.indexOf("// --- History ---"),
+    );
+    expect(form).toContain("upsertProviderLocal");
+
+    // The reconcile still runs, just without blocking the render.
+    expect(quiet).toContain("loadProviders({ silent: true })");
+    expect(form).toContain("loadProviders({ silent: true })");
+  });
+
   it("titles the viewer with the credential name", () => {
     const html = getAdminHtml();
     const start = html.indexOf("async function openLlmView");
