@@ -494,6 +494,24 @@ export function getAdminHtml(): string {
       border-bottom: 1px solid var(--border);
     }
 
+    /* Credential plaintext: long tokens have no spaces, so they must be forced
+       to wrap or they blow out the modal on narrow screens. user-select: all
+       makes a single tap select the whole value on mobile. */
+    .secret-value {
+      display: block;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      word-break: break-all;
+      overflow-wrap: anywhere;
+      user-select: all;
+      -webkit-user-select: all;
+    }
+
     @media (max-width: 640px) {
       .container { padding: 24px 20px; }
       .table { font-size: 13px; }
@@ -731,6 +749,31 @@ export function getAdminHtml(): string {
       <div class="close-btn">
         <button class="btn btn-outline btn-sm" onclick="closeModal()">关闭</button>
       </div>
+    </div>
+  </div>
+
+  <!-- LLM credential viewer -->
+  <div id="llm-view-modal" class="modal-overlay">
+    <div class="modal">
+      <h3>查看密钥</h3>
+      <div class="form-group">
+        <label>名称</label>
+        <div id="llm-view-name"></div>
+      </div>
+      <div class="form-group">
+        <label>Slug</label>
+        <div id="llm-view-slug" class="mono"></div>
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <span id="llm-view-secret" class="secret-value">••••••••••••</span>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap">
+        <button id="llm-view-toggle" class="btn btn-outline btn-sm" onclick="toggleLlmPlain()" disabled>显示</button>
+        <button class="btn btn-primary btn-sm" onclick="copyLlmPlain()">复制</button>
+        <button class="btn btn-outline btn-sm" onclick="closeLlmView()">关闭</button>
+      </div>
+      <div id="llm-view-status" class="status-msg" role="status" aria-live="polite"></div>
     </div>
   </div>
 
@@ -1683,7 +1726,6 @@ export function getAdminHtml(): string {
     let llmKeys = [];
     let llmLoaded = false;
     let llmEditingSlug = null;
-    let llmRevealTimer = null;
 
     function setLlmStatus(ok, msg) {
       showStatus(document.getElementById('llm-status'), ok, msg);
@@ -1713,7 +1755,7 @@ export function getAdminHtml(): string {
         html += '<td class="mono">' + maskedLlmHint(item) + '</td>';
         html += '<td>' + (item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-') + '</td>';
         html += '<td><div class="btn-group">';
-        html += '<button class="btn btn-outline btn-sm" onclick="copyLlmKey(\\'' + esc(item.slug) + '\\')">查看并复制</button>';
+        html += '<button class="btn btn-outline btn-sm" onclick="openLlmView(\\'' + esc(item.slug) + '\\')">查看</button>';
         html += '<button class="btn btn-outline btn-sm" onclick="openLlmModal(\\'' + esc(item.slug) + '\\')">编辑</button>';
         html += '<button class="btn btn-outline btn-sm" onclick="removeLlmKey(\\'' + esc(item.slug) + '\\')">删除</button>';
         html += '</div></td>';
@@ -1829,37 +1871,125 @@ export function getAdminHtml(): string {
       }
     }
 
-    async function copyLlmKey(slug) {
-      if (llmRevealTimer) {
-        clearTimeout(llmRevealTimer);
-        llmRevealTimer = null;
+    // --- View a credential (masked by default, explicit reveal) ---
+
+    let llmViewSlug = null;
+    let llmViewSecret = null;
+    let llmViewShown = false;
+    let llmViewTimer = null;
+
+    const LLM_MASK = '••••••••••••';
+
+    async function fetchLlmSecret(slug) {
+      const result = await api('/api/llm/keys/' + encodeURIComponent(slug) + '/reveal', {
+        method: 'POST',
+      });
+      if (!result.ok) {
+        throw new Error(result.error && result.error.message ? result.error.message : '读取失败');
       }
+      const secret = result.data && result.data.apiKey ? result.data.apiKey : '';
+      if (!secret) throw new Error('服务器未返回密钥');
+      return secret;
+    }
+
+    // Plaintext never outlives this window: the value is dropped and the box
+    // re-masked 30 seconds after the last reveal or reveal-triggering action.
+    function armLlmViewTimer() {
+      if (llmViewTimer) clearTimeout(llmViewTimer);
+      llmViewTimer = setTimeout(() => {
+        llmViewTimer = null;
+        llmViewSecret = null;
+        llmViewShown = false;
+        const box = document.getElementById('llm-view-secret');
+        const toggle = document.getElementById('llm-view-toggle');
+        if (box) box.textContent = LLM_MASK;
+        if (toggle) {
+          toggle.textContent = '显示';
+          toggle.disabled = true;
+        }
+        const modal = document.getElementById('llm-view-modal');
+        if (modal && modal.classList.contains('show')) {
+          showStatus(document.getElementById('llm-view-status'), true, '明文已自动隐藏');
+        }
+      }, 30000);
+    }
+
+    async function openLlmView(slug) {
+      llmViewSlug = slug;
+      llmViewSecret = null;
+      llmViewShown = false;
+      let item = null;
+      for (let index = 0; index < llmKeys.length; index++) {
+        if (llmKeys[index].slug === slug) item = llmKeys[index];
+      }
+      document.getElementById('llm-view-name').textContent = item ? item.name : slug;
+      document.getElementById('llm-view-slug').textContent = slug;
+      document.getElementById('llm-view-secret').textContent = LLM_MASK;
+      const toggle = document.getElementById('llm-view-toggle');
+      toggle.textContent = '显示';
+      toggle.disabled = true;
+      const status = document.getElementById('llm-view-status');
+      status.className = 'status-msg';
+      status.textContent = '';
+      document.getElementById('llm-view-modal').classList.add('show');
+      showStatus(status, true, '正在读取...');
+      armLlmViewTimer();
       try {
-        const result = await api('/api/llm/keys/' + encodeURIComponent(slug) + '/reveal', {
-          method: 'POST',
-        });
-        if (!result.ok) {
-          setLlmStatus(false, result.error && result.error.message ? result.error.message : '读取失败');
-          return;
-        }
-        const secret = result.data && result.data.apiKey ? result.data.apiKey : '';
-        if (!secret) {
-          setLlmStatus(false, '服务器未返回密钥');
-          return;
-        }
-        try {
-          await navigator.clipboard.writeText(secret);
-          setLlmStatus(true, '密钥已复制到剪贴板');
-        } catch {
-          setLlmStatus(false, '无法写入剪贴板，请立即手动复制：' + secret);
-        }
-        llmRevealTimer = setTimeout(() => {
-          llmRevealTimer = null;
-          setLlmStatus(true, '明文已清除');
-        }, 30000);
+        llmViewSecret = await fetchLlmSecret(slug);
+        toggle.disabled = false;
+        showStatus(status, true, '点「显示」查看明文，30 秒后自动隐藏。');
       } catch (error) {
-        setLlmStatus(false, error && error.message ? error.message : '读取失败');
+        showStatus(status, false, error && error.message ? error.message : '读取失败');
       }
+    }
+
+    function toggleLlmPlain() {
+      if (!llmViewSecret) return;
+      llmViewShown = !llmViewShown;
+      document.getElementById('llm-view-secret').textContent = llmViewShown ? llmViewSecret : LLM_MASK;
+      document.getElementById('llm-view-toggle').textContent = llmViewShown ? '隐藏' : '显示';
+      showStatus(
+        document.getElementById('llm-view-status'),
+        true,
+        llmViewShown ? '明文已显示，30 秒后自动隐藏。' : '已隐藏明文'
+      );
+      armLlmViewTimer();
+    }
+
+    async function copyLlmPlain() {
+      const status = document.getElementById('llm-view-status');
+      try {
+        if (!llmViewSecret) {
+          llmViewSecret = await fetchLlmSecret(llmViewSlug);
+          document.getElementById('llm-view-toggle').disabled = false;
+        }
+        await navigator.clipboard.writeText(llmViewSecret);
+        showStatus(status, true, '已复制到剪贴板');
+      } catch (error) {
+        if (llmViewSecret) {
+          // Clipboard blocked (non-secure context, permission, older browser):
+          // show the value instead so it can still be copied by hand.
+          llmViewShown = true;
+          document.getElementById('llm-view-secret').textContent = llmViewSecret;
+          document.getElementById('llm-view-toggle').textContent = '隐藏';
+          showStatus(status, false, '无法写入剪贴板，明文已显示，请手动复制');
+        } else {
+          showStatus(status, false, error && error.message ? error.message : '复制失败');
+        }
+      }
+      armLlmViewTimer();
+    }
+
+    function closeLlmView() {
+      if (llmViewTimer) {
+        clearTimeout(llmViewTimer);
+        llmViewTimer = null;
+      }
+      llmViewSecret = null;
+      llmViewShown = false;
+      llmViewSlug = null;
+      document.getElementById('llm-view-secret').textContent = LLM_MASK;
+      document.getElementById('llm-view-modal').classList.remove('show');
     }
 
     async function removeLlmKey(slug) {
