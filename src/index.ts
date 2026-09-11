@@ -14,7 +14,7 @@ export default {
   async fetch(
     request: Request,
     env: Env,
-    _ctx: ExecutionContext,
+    ctx: ExecutionContext,
   ): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -94,7 +94,7 @@ export default {
           headers.set("Authorization", `Bearer ${env.ADMIN_TOKEN}`);
           request = new Request(request, { headers });
         }
-        const apiResponse = await handleApi(request, env, path);
+        const apiResponse = await handleApi(request, env, path, ctx);
         if (apiResponse) return apiResponse;
       }
 

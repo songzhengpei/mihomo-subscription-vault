@@ -298,17 +298,17 @@ describe("admin LLM credential UI", () => {
     expect(html).not.toContain("copyLlmKey");
   });
 
-  it("shows the shell at once and prefetches every tab", () => {
+  it("verifies the session before revealing the shell, then prefetches", () => {
     const html = getAdminHtml();
     const check = html.slice(
       html.indexOf("async function checkSession"),
       html.indexOf("async function doLogout"),
     );
 
-    // The shell is rendered before the session check is awaited, so a refresh
-    // never stalls on the login form.
-    expect(check.indexOf("showMainScreen()")).toBeLessThan(
-      check.indexOf("await fetch('/api/auth/session'"),
+    // No flash of the admin layout on an unauthenticated visit: the session is
+    // checked first, so the login form stays up until it is confirmed.
+    expect(check.indexOf("await fetch('/api/auth/session'")).toBeLessThan(
+      check.indexOf("showMainScreen()"),
     );
     expect(check).toContain("showLoadingPlaceholders()");
     expect(check).toContain("await loadAllViews()");

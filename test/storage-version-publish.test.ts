@@ -1031,6 +1031,60 @@ describe("listVersions with mixed formats", () => {
     expect(items.length).toBe(versionIds.length);
     expect(maxInFlight).toBeGreaterThan(1);
   });
+
+  it("hands version pruning to the defer hook instead of awaiting it", async () => {
+    const slug = "defer-prune";
+    // Seed history directly so no prune has run yet.
+    for (const id of ["v1", "v2", "v3", "v4"]) {
+      await writeLegacyVersionMeta(mockBucket, slug, id, {
+        versionId: id,
+        createdAt: "2025-06-01T00:00:00Z",
+        nodeCount: 1,
+        sha256: "abcdef0123456789",
+        contentLength: 100,
+        sourceHost: "example.com",
+      });
+    }
+
+    const api = mockBucket as unknown as { delete(key: string): Promise<void> };
+    const originalDelete = api.delete.bind(api);
+    let deleteCalls = 0;
+    api.delete = async (key: string) => {
+      deleteCalls++;
+      return originalDelete(key);
+    };
+
+    let deferred: Promise<unknown> | null = null;
+    let deferredResolved = false;
+    const defer = (promise: Promise<unknown>) => {
+      deferred = promise;
+      void promise.then(() => {
+        deferredResolved = true;
+      });
+    };
+
+    const published = await publishProviderVersion(
+      mockBucket as unknown as R2Bucket,
+      createTestInput({ providerSlug: slug }),
+      fixedDeps("20260101T000000Z-aaaaaaaa-deferpro"),
+      defer,
+    );
+
+    // The publish resolved and handed the housekeeping off: the prune has not
+    // awaited past its first step, so nothing has been deleted yet.
+    expect(published.versionId).toBe("20260101T000000Z-aaaaaaaa-deferpro");
+    expect(deferred).not.toBeNull();
+    expect(deleteCalls).toBe(0);
+    expect(deferredResolved).toBe(false);
+
+    await deferred;
+    expect(deleteCalls).toBeGreaterThan(0);
+    const remaining = await listVersions(
+      mockBucket as unknown as R2Bucket,
+      slug,
+    );
+    expect(remaining.length).toBeLessThanOrEqual(3);
+  });
 });
 
 // ---------------------------------------------------------------------------

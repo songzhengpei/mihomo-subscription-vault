@@ -306,6 +306,13 @@ export interface PublishDependencies {
   generateVersionId(sourceSha256: string): string | Promise<string>;
 }
 
+/**
+ * Defer post-publish housekeeping (version pruning) until after the response has
+ * been sent. Wired to `ExecutionContext.waitUntil` by the HTTP layer; without it
+ * the work is awaited as before.
+ */
+export type DeferWork = (promise: Promise<unknown>) => void;
+
 // Error codes for version publishing
 export type VersionPublishErrorCode =
   | "VERSION_CONFLICT"
@@ -558,6 +565,12 @@ export interface LlmSecretPointer {
   key: string;
   sha256: string;
   updatedAt: string;
+  /**
+   * ETag of the stored ciphertext, recorded so a rotation can assert the exact
+   * revision it replaces without re-reading the object first. Optional: records
+   * written before this field existed fall back to a read.
+   */
+  etag?: string;
 }
 
 export interface LlmKeyMeta {

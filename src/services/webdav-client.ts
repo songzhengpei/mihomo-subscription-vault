@@ -149,15 +149,30 @@ export function timestampFileName(): string {
   return `O-worker-backup-${ts}.zip`;
 }
 
+/**
+ * Ensure the backup directory exists. Split out from pushBackup so callers can
+ * start it while the archive is still being assembled — it is one external round
+ * trip that does not depend on the archive at all.
+ */
+export async function ensureBackupDirectory(
+  config: WebDAVConfig,
+): Promise<WebDAVResult> {
+  const dirPath = config.remotePath.split("/").slice(0, -1).join("/");
+  if (!dirPath) return { ok: false, error: "无法从 remotePath 解析目录" };
+  return mkdir(config, dirPath);
+}
+
 export async function pushBackup(
   config: WebDAVConfig,
   zipData: Uint8Array,
+  directoryReady = false,
 ): Promise<WebDAVResult> {
   const dirPath = config.remotePath.split("/").slice(0, -1).join("/");
   if (!dirPath) return { ok: false, error: "无法从 remotePath 解析目录" };
 
-  // MKCOL to ensure directory exists — best effort, ignore failures (403/405 are expected)
-  await mkdir(config, dirPath);
+  // MKCOL to ensure directory exists — best effort, ignore failures (403/405 are
+  // expected). Skipped when the caller already ran ensureBackupDirectory.
+  if (!directoryReady) await mkdir(config, dirPath);
 
   // Use timestamped filename instead of fixed name
   const fileName = timestampFileName();

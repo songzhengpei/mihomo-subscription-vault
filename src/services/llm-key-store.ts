@@ -312,17 +312,6 @@ async function readObject(
 }
 
 /**
- * Uses `head()` when the binding provides it, falling back to a body read so
- * lightweight test doubles stay usable.
- */
-async function objectExists(bucket: R2Bucket, key: string): Promise<boolean> {
-  if (typeof bucket.head === "function") {
-    return (await bucket.head(key)) !== null;
-  }
-  return (await bucket.get(key)) !== null;
-}
-
-/**
  * Single listing pass over the `llm/` prefix. Returns the slugs **and** every
  * object key, so callers can tell whether a ciphertext exists without issuing a
  * separate HEAD per credential.
@@ -372,9 +361,6 @@ export async function createLlmKey(
   const secret = requireSecret(instanceSecret);
   const input = normalizeLlmKeyCreate(rawInput);
   const metaKey = llmMetaKey(input.slug);
-  if (await objectExists(bucket, metaKey)) {
-    throw new LlmKeyError("LLM_KEY_CONFLICT", "该 Slug 已存在");
-  }
   const timestamp = now.toISOString();
   const envelope = await encryptLlmSecret(
     { apiKey: input.apiKey, extra: {} },
@@ -382,6 +368,9 @@ export async function createLlmKey(
   );
   const serialized = JSON.stringify(envelope);
   const secretKey = llmSecretKey(input.slug);
+  // The conditional create *is* the existence check: an unconditional
+  // pre-flight read would cost a whole extra round trip. A pre-existing
+  // ciphertext makes this put fail, so nothing is overwritten.
   const secretPut = await bucket.put(secretKey, serialized, {
     httpMetadata: { contentType: "application/json" },
     onlyIf: { etagDoesNotMatch: "*" },
@@ -404,6 +393,7 @@ export async function createLlmKey(
       key: secretKey,
       sha256: await sha256HexText(serialized),
       updatedAt: timestamp,
+      etag: secretPut.etag,
     },
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -413,6 +403,10 @@ export async function createLlmKey(
     onlyIf: { etagDoesNotMatch: "*" },
   });
   if (!metaPut) {
+    // The slug already had a meta record but no ciphertext (a pointer left
+    // behind by a manual delete). Undo our ciphertext write so the entry keeps
+    // its previous "missing" state instead of becoming hash-mismatched.
+    await bucket.delete(secretKey);
     throw new LlmKeyError("LLM_KEY_CONFLICT", "该 Slug 已存在");
   }
   return meta;
@@ -492,8 +486,11 @@ export async function updateLlmKey(
   if (patch.apiKey !== undefined) {
     const secret = requireSecret(instanceSecret);
     const secretKey = current.secret.key || llmSecretKey(slug);
-    // Read first so the write can assert the exact revision it replaces.
-    const existing = await readObject(bucket, secretKey);
+    // Assert the exact revision being replaced. The ETag recorded on create or
+    // the last rotation avoids re-reading the ciphertext; records written before
+    // that field existed fall back to a read.
+    const expectedEtag =
+      current.secret.etag ?? (await readObject(bucket, secretKey))?.etag;
     const envelope = await encryptLlmSecret(
       { apiKey: patch.apiKey, extra: {} },
       secret,
@@ -501,8 +498,8 @@ export async function updateLlmKey(
     const serialized = JSON.stringify(envelope);
     const secretPut = await bucket.put(secretKey, serialized, {
       httpMetadata: { contentType: "application/json" },
-      onlyIf: existing
-        ? { etagMatches: existing.etag }
+      onlyIf: expectedEtag
+        ? { etagMatches: expectedEtag }
         : { etagDoesNotMatch: "*" },
     });
     if (!secretPut) {
@@ -515,6 +512,7 @@ export async function updateLlmKey(
       key: secretKey,
       sha256: await sha256HexText(serialized),
       updatedAt: timestamp,
+      etag: secretPut.etag,
     };
   }
 

@@ -513,6 +513,7 @@ export async function updateProvider(
   providerName: string,
   env: Env,
   requestedUserAgent?: string,
+  waitUntil?: (promise: Promise<unknown>) => void,
 ): Promise<{ meta: ProviderMeta; isNew: boolean }> {
   const config = getConfig(env);
   const userAgent = normalizeUpstreamUserAgent(requestedUserAgent);
@@ -669,28 +670,33 @@ export async function updateProvider(
 
   // 8. Publish V1 version — V1 kernel handles ALL dedup/idempotency
   // Pass expectedLatestEtag for CAS: reject if pointer changed during fetch
-  const published = await storage.publishProviderVersion(bucket, {
-    providerSlug: slug,
-    subscriptionId,
-    uid,
-    rawContent: rawText,
-    providerYaml,
-    profileYaml,
-    nodeCount: nodeStats.effective,
-    generatorVersion: "1.0.0",
-    distribution: {
-      providerName,
-      sourceHost: extractHost(finalUrl),
-      subscriptionUserinfo: subUserinfo,
-      profileUpdateInterval: profileInterval,
-      profileWebPageUrl: profileWebUrl,
-      clientUpdatePolicy: existingClientUpdatePolicy,
+  const published = await storage.publishProviderVersion(
+    bucket,
+    {
+      providerSlug: slug,
+      subscriptionId,
+      uid,
+      rawContent: rawText,
+      providerYaml,
+      profileYaml,
+      nodeCount: nodeStats.effective,
+      generatorVersion: "1.0.0",
+      distribution: {
+        providerName,
+        sourceHost: extractHost(finalUrl),
+        subscriptionUserinfo: subUserinfo,
+        profileUpdateInterval: profileInterval,
+        profileWebPageUrl: profileWebUrl,
+        clientUpdatePolicy: existingClientUpdatePolicy,
+      },
+      expectedLatestEtag: stored?.etag,
+      nodeStats: internalDependencies.length > 0 ? nodeStats : undefined,
+      internalDependencies:
+        internalDependencies.length > 0 ? internalDependencies : undefined,
     },
-    expectedLatestEtag: stored?.etag,
-    nodeStats: internalDependencies.length > 0 ? nodeStats : undefined,
-    internalDependencies:
-      internalDependencies.length > 0 ? internalDependencies : undefined,
-  });
+    undefined,
+    waitUntil,
+  );
 
   // 9. Mark staging as completed and persist source URL
   await storage.markStagingCompleted(bucket, slug, requestId);

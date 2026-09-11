@@ -903,13 +903,9 @@ export function getAdminHtml(): string {
     }
 
     async function checkSession() {
-      // The /admin page is public HTML that carries no data, so the shell is
-      // shown at once: the layout and its loading placeholders appear
-      // immediately instead of the user staring at the login form while the
-      // session check and the first fetch complete. A failed check still drops
-      // back to the login form.
-      showMainScreen();
-      showLoadingPlaceholders();
+      // Verify the session before revealing the shell: rendering it first made
+      // an unauthenticated visit flash the admin layout before bouncing to the
+      // login form. Data still arrives from one parallel prefetch pass below.
       try {
         const response = await fetch('/api/auth/session', {
           credentials: 'same-origin',
@@ -917,6 +913,8 @@ export function getAdminHtml(): string {
         });
         const result = await response.json();
         if (response.ok && result?.data?.authenticated) {
+          showMainScreen();
+          showLoadingPlaceholders();
           await loadAllViews();
           return;
         }

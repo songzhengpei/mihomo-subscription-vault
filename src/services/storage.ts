@@ -12,6 +12,7 @@ import type {
   PublishVersionInput,
   PublishedVersion,
   PublishDependencies,
+  DeferWork,
   VersionPublishErrorCode,
   StoredLatestPointer,
   ProviderDistributionMetadata,
@@ -1558,6 +1559,7 @@ export async function publishProviderVersion(
   bucket: R2Bucket,
   input: PublishVersionInput,
   deps?: PublishDependencies,
+  defer?: DeferWork,
 ): Promise<PublishedVersion> {
   const now = deps?.now ?? (() => new Date());
   const genVersionId =
@@ -1680,7 +1682,12 @@ export async function publishProviderVersion(
       );
 
     if (canReuse) {
-      await tryPruneProviderVersions(bucket, input.providerSlug);
+      const prune = tryPruneProviderVersions(bucket, input.providerSlug);
+      if (defer) {
+        defer(prune);
+      } else {
+        await prune;
+      }
       return {
         versionId: resolved.meta.versionId,
         latest: startingPointer,
@@ -1792,7 +1799,15 @@ export async function publishProviderVersion(
     );
   }
 
-  await tryPruneProviderVersions(bucket, input.providerSlug);
+  // Pruning is housekeeping, not part of the publish contract. Deferring it
+  // keeps a full history scan plus deletes off the response path; without a
+  // defer hook (CLI, tests) it is awaited exactly as before.
+  const prune = tryPruneProviderVersions(bucket, input.providerSlug);
+  if (defer) {
+    defer(prune);
+  } else {
+    await prune;
+  }
 
   return { versionId, latest: latestPointer, meta };
 }

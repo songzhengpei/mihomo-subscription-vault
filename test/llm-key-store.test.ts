@@ -226,6 +226,70 @@ describe("llm-key-store: create", () => {
     expect(mock.store.get(llmSecretKey("deepseek-main"))).toBe(before);
   });
 
+  it("creates without a pre-flight existence read", async () => {
+    const api = mock as unknown as {
+      get(key: string): Promise<unknown>;
+      head(key: string): Promise<unknown>;
+    };
+    const originalGet = api.get.bind(api);
+    const originalHead = api.head.bind(api);
+    let reads = 0;
+    api.get = async (key: string) => {
+      reads++;
+      return originalGet(key);
+    };
+    api.head = async (key: string) => {
+      reads++;
+      return originalHead(key);
+    };
+
+    await createLlmKey(bucket, INSTANCE_SECRET, makeInput(), FIXED_TIME);
+
+    // The conditional put is the conflict check, so create is write-only.
+    expect(reads).toBe(0);
+  });
+
+  it("records the ciphertext ETag so a rotation needs no extra read", async () => {
+    const created = await createLlmKey(
+      bucket,
+      INSTANCE_SECRET,
+      makeInput(),
+      FIXED_TIME,
+    );
+    expect(created.secret.etag).toBeTruthy();
+
+    const api = mock as unknown as { get(key: string): Promise<unknown> };
+    const originalGet = api.get.bind(api);
+    let secretReads = 0;
+    api.get = async (key: string) => {
+      if (key === llmSecretKey("deepseek-main")) secretReads++;
+      return originalGet(key);
+    };
+
+    await updateLlmKey(
+      bucket,
+      INSTANCE_SECRET,
+      "deepseek-main",
+      { apiKey: "sk-rotated-key-9999" },
+      FIXED_TIME,
+    );
+    expect(secretReads).toBe(0);
+
+    // A record written before the ETag field existed still works: it falls back
+    // to reading the ciphertext once.
+    const metaRecord = JSON.parse(mock.store.get(llmMetaKey("deepseek-main"))!);
+    delete metaRecord.secret.etag;
+    mock.store.set(llmMetaKey("deepseek-main"), JSON.stringify(metaRecord));
+    await updateLlmKey(
+      bucket,
+      INSTANCE_SECRET,
+      "deepseek-main",
+      { apiKey: "sk-rotated-again-8888" },
+      FIXED_TIME,
+    );
+    expect(secretReads).toBe(1);
+  });
+
   it("refuses to store anything without a usable INSTANCE_SECRET", async () => {
     await expectLlmError(
       createLlmKey(bucket, undefined, makeInput(), FIXED_TIME),

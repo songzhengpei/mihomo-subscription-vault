@@ -27,6 +27,7 @@ import {
   pushBackup,
   pullBackup,
   listFiles,
+  ensureBackupDirectory,
 } from "../services/webdav-client.ts";
 import type { WebDAVConfig } from "../types.ts";
 import { handleLlmApi } from "./llm-api.ts";
@@ -75,6 +76,7 @@ export async function handleApi(
   request: Request,
   env: Env,
   path: string,
+  ctx?: ExecutionContext,
 ): Promise<Response | null> {
   // LLM credential vault: owns the whole /api/llm/* namespace. Independent of
   // the provider subscription routes below.
@@ -257,22 +259,15 @@ export async function handleApi(
     const config = await storage.getWebDAVConfig(env.SUBSCRIPTION_BUCKET);
     if (!config) return json({ ok: false, error: "WebDAV 未配置" }, 400);
     try {
-      const { stream } = await buildUnifiedExport(env.SUBSCRIPTION_BUCKET, env);
-      const reader = stream.getReader();
-      const chunks: Uint8Array[] = [];
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-      }
-      const totalLen = chunks.reduce((s, c) => s + c.length, 0);
-      const zip = new Uint8Array(totalLen);
-      let offset = 0;
-      for (const chunk of chunks) {
-        zip.set(chunk, offset);
-        offset += chunk.length;
-      }
-      const result = await pushBackup(config, zip);
+      // The directory check and the archive build are independent, so the MKCOL
+      // round trip overlaps ZIP assembly instead of following it.
+      const [{ stream }, directory] = await Promise.all([
+        buildUnifiedExport(env.SUBSCRIPTION_BUCKET, env),
+        ensureBackupDirectory(config),
+      ]);
+      if (!directory.ok) return json(directory, 400);
+      const zip = new Uint8Array(await new Response(stream).arrayBuffer());
+      const result = await pushBackup(config, zip, true);
       return json(result, result.ok ? 200 : 400);
     } catch (e) {
       return unifiedExportErrorResponse(e);
@@ -382,6 +377,8 @@ export async function handleApi(
         body.name,
         env,
         body.userAgent,
+        // Version pruning runs after the response instead of delaying it.
+        ctx ? (promise) => ctx.waitUntil(promise) : undefined,
       );
       return json({
         ok: true,
