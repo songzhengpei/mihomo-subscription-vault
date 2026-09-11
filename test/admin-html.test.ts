@@ -169,7 +169,7 @@ describe("admin unified import UI", () => {
     expect(html).toContain(".table-stack thead { display: none; }");
     expect(html).toContain(".table-stack .cell-primary {");
     expect(html).toContain('content: attr(data-label) " "');
-    expect(html).toContain(".table-stack .btn-group { flex-wrap: wrap;");
+    expect(html).toContain(".table-stack .cell-actions .btn-group {");
     // The name cell must never collapse to one character per line again.
     expect(html).toContain('class="cell-primary"');
     // Fields share a row instead of one full-width input per line.
@@ -240,11 +240,11 @@ describe("admin LLM credential UI", () => {
     const html = getAdminHtml();
     const pane = html.slice(
       html.indexOf('id="tab-llm"'),
-      html.indexOf('id="add-subscription-section"'),
+      html.indexOf('id="tab-history"'),
     );
 
-    // Mirrors the 添加订阅 card: same section/card/form-group markup.
-    expect(pane).toContain('<div class="section-title">添加大模型密钥</div>');
+    // Mirrors the 添加订阅 panel: same collapsible summary + card + form markup.
+    expect(pane).toContain("<summary>添加大模型密钥</summary>");
     expect(pane).toContain('class="form-group"');
     expect(pane).toContain('id="llm-add-name"');
     expect(pane).toContain('id="llm-add-slug"');
@@ -257,8 +257,67 @@ describe("admin LLM credential UI", () => {
     expect(pane).not.toContain("Base URL");
     expect(pane).not.toContain("llm-add-provider");
     expect(pane).not.toContain("llm-add-models");
-    // Subscription add form stays out of this pane.
+    // Subscription add panel lives in the list tab, not here.
     expect(pane).not.toContain('id="add-subscription-section"');
+  });
+
+  it("keeps every add form collapsed inside its own tab", () => {
+    const html = getAdminHtml();
+    const listPane = html.slice(
+      html.indexOf('id="tab-list"'),
+      html.indexOf('id="tab-llm"'),
+    );
+
+    // The list tab owns its own add panel — it used to sit outside the tab panes
+    // and therefore showed up under 历史版本 and 导入与导出 too.
+    expect(listPane).toContain('id="add-subscription-section"');
+    expect(listPane).toContain("<summary>添加订阅</summary>");
+    expect(listPane).toContain('class="add-panel"');
+    expect(listPane).toContain('id="update-url"');
+    // Nothing outside the tab panes renders add forms any more.
+    const afterTabs = html.slice(html.indexOf('id="tab-backup"'));
+    expect(afterTabs).not.toContain('id="add-subscription-section"');
+    expect(afterTabs).not.toContain('id="llm-add-panel"');
+  });
+
+  it("renders the header as a single-line toolbar", () => {
+    const html = getAdminHtml();
+    const header = html.slice(
+      html.indexOf("<header>"),
+      html.indexOf("</header>"),
+    );
+
+    expect(header).toContain('class="topbar-title"');
+    expect(header).toContain("退出登录");
+    expect(header).toContain('class="subtitle"');
+    // One row, not a centred stack of three.
+    expect(html).toContain("justify-content: space-between;");
+    expect(html).not.toContain('class="subtitle">Mihomo Subscription Vault — ');
+  });
+
+  it("lays the backup tab out in two columns", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain(".backup-grid {");
+    expect(html).toContain("grid-template-columns: 1.15fr 1fr;");
+    expect(html).toContain('class="backup-col"');
+  });
+
+  it("carries role classes so the mobile card can lay itself out", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain(".table-stack .cell-time {");
+    expect(html).toContain(".table-stack .cell-meta {");
+    expect(html).toContain(".table-stack .cell-actions {");
+    // Name grows, time sits at the right edge, metas share one line.
+    expect(html).toContain(".table-stack .cell-primary {");
+    expect(html).toContain("flex: 1 1 auto;");
+    expect(html).toContain(".table-stack .cell-actions {");
+    expect(html).toContain("flex: 1 1 100%;");
+    // Buttons shrink so the action block stops dominating the card.
+    expect(html).toContain(
+      ".table-stack .btn { padding: 5px 9px; font-size: 12px; }",
+    );
   });
 
   it("mirrors the subscription table's mobile horizontal scroll", () => {

@@ -38,21 +38,30 @@ export function getAdminHtml(): string {
     }
 
     header {
-      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
       border-bottom: 1px solid var(--border);
-      padding-bottom: 20px;
-      margin-bottom: 28px;
+      padding-bottom: 14px;
+      margin-bottom: 20px;
+    }
+
+    .topbar-title {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
     }
 
     h1 {
-      font-size: 26px;
+      font-size: 20px;
       font-weight: 700;
     }
 
     .subtitle {
       color: var(--text-dim);
-      font-size: 15px;
-      margin-top: 6px;
+      font-size: 13px;
     }
 
     /* Auth */
@@ -494,6 +503,71 @@ export function getAdminHtml(): string {
       border-bottom: 1px solid var(--border);
     }
 
+    /* Collapsible add panel: kept collapsed so the list owns the first screen
+       instead of pushing a full form below the fold. */
+    .add-panel {
+      margin-top: 20px;
+    }
+
+    .add-panel > summary {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      list-style: none;
+      user-select: none;
+    }
+
+    .add-panel > summary::-webkit-details-marker { display: none; }
+
+    .add-panel > summary::before {
+      content: '＋';
+      color: var(--primary);
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .add-panel[open] > summary::before { content: '－'; }
+
+    .add-panel > summary::after {
+      content: '新增后自动生成固定地址';
+      margin-left: auto;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-weight: 400;
+    }
+
+    .add-panel[open] > summary { border-radius: 10px 10px 0 0; }
+
+    .add-panel > .card {
+      border-radius: 0 0 10px 10px;
+      border-top: 0;
+      margin-bottom: 0;
+    }
+
+    /* WebDAV on the left, export/import stacked on the right. */
+    .backup-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .backup-grid > .card,
+    .backup-col > .card { margin-bottom: 0; }
+
+    .backup-col {
+      display: grid;
+      gap: 20px;
+      align-content: start;
+    }
+
     /* Compact variant for single-value popups. */
     .modal-sm {
       max-width: 420px;
@@ -579,50 +653,81 @@ export function getAdminHtml(): string {
         height: 48px;
       }
       .order-number { display: none; }
-      h1 { font-size: 22px; }
+      h1 { font-size: 18px; }
 
-      /* The tab strip is wider than a phone, and an overflowing child widens the
-         whole page — which used to clip the header, the cards and the last tab.
-         It scrolls inside its own strip instead. */
-      .tabs { overflow-x: auto; flex-wrap: nowrap; margin-bottom: 20px; }
-      .tab { padding: 10px 14px; font-size: 14px; white-space: nowrap; }
-      header { padding-bottom: 14px; margin-bottom: 20px; }
-      .subtitle { font-size: 13px; }
+      /* A tab strip wider than the phone used to widen the whole page, clipping
+         the header, the cards and the last tab. Wrapping keeps every tab
+         reachable instead of hiding one off-screen. */
+      .tabs { flex-wrap: wrap; overflow-x: visible; margin-bottom: 18px; }
+      .tab { padding: 9px 12px; font-size: 14px; white-space: nowrap; }
+      /* The project name is noise on a phone; dropping it keeps the toolbar to a
+         single row and stops the logout button from wrapping. */
+      .subtitle { display: none; }
+      header .btn { white-space: nowrap; }
+      .add-panel > summary { padding: 11px 14px; }
+      .add-panel > summary::after { content: none; }
+      .backup-grid { grid-template-columns: 1fr; gap: 16px; }
+      .backup-col { gap: 16px; }
 
       /* Narrow screens: a six-column table cannot survive 390px — the name
          column collapsed to one character per line and the actions needed
-         sideways scrolling. Each row becomes a stacked card instead. */
+         sideways scrolling. Each row becomes a compact card instead: name left,
+         time right on one line, the rest merged into a single meta line, and the
+         buttons on their own line. */
       .table-stack,
-      .table-stack tbody,
-      .table-stack tr,
-      .table-stack td { display: block; width: auto; }
+      .table-stack tbody { display: block; width: auto; }
       .table-stack thead { display: none; }
       .table-stack tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        column-gap: 10px;
         border: 1px solid var(--border);
         border-radius: 8px;
         background: var(--surface-2);
         padding: 10px 12px;
         margin-bottom: 10px;
       }
-      .table-stack td { border: 0; padding: 1px 0; }
+      .table-stack td { display: block; border: 0; padding: 0; width: auto; }
+      /* DOM order is name, slug, time, count, actions. On mobile the time is
+         pulled up next to the name to fill the right edge, the remaining values
+         share one quiet meta line, and the actions close the card. */
       .table-stack .cell-primary {
+        order: 1;
+        flex: 1 1 auto;
+        min-width: 0;
         font-size: 15px;
         font-weight: 600;
-        padding-bottom: 4px;
+      }
+      /* Pulls the timestamp to the right edge, filling the space that used to be
+         empty and halving the card height. */
+      .table-stack .cell-time {
+        order: 2;
+        flex: 0 0 auto;
+        font-size: 12px;
+        color: var(--text-dim);
+      }
+      .table-stack .cell-meta {
+        order: 3;
+        flex: 0 0 auto;
+        font-size: 12px;
+        color: var(--text-dim);
       }
       .table-stack td[data-label]::before {
         content: attr(data-label) " ";
         color: var(--text-dim);
-        font-size: 12px;
       }
-      .table-stack td[data-label] { font-size: 12px; color: var(--text-dim); }
-      .table-stack td[data-label].mono { font-size: 12px; }
+      .table-stack .cell-meta.mono { font-size: 12px; }
       .table-stack .order-cell { display: none; }
-      .table-stack td:last-child { padding-top: 10px; }
+      .table-stack .cell-actions { order: 9; flex: 1 1 100%; padding-top: 8px; }
       /* Buttons wrap into as many lines as they need instead of forcing a
-         horizontal scroll on the whole table. */
-      .table-stack .btn-group { flex-wrap: wrap; justify-content: flex-start; }
-      .table-stack td:last-child { text-align: left; }
+         horizontal scroll, and shrink so the action block stops dominating. */
+      .table-stack .cell-actions .btn-group {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+      }
+      .table-stack .btn { padding: 5px 9px; font-size: 12px; }
+      .table-stack .cell-actions { text-align: left; }
       #providers-list, #history-list, #llm-keys-list { overflow-x: visible; }
     }
   </style>
@@ -657,9 +762,11 @@ export function getAdminHtml(): string {
 
   <div id="main-screen" class="container" style="display:none">
     <header>
-      <h1>订阅管理中心</h1>
-      <div class="subtitle">Mihomo Subscription Vault — 私有订阅快照与配置管理</div>
-      <button class="btn btn-outline btn-sm" style="margin-top:12px" onclick="doLogout()">退出登录</button>
+      <div class="topbar-title">
+        <h1>订阅管理中心</h1>
+        <div class="subtitle">Mihomo Subscription Vault</div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="doLogout()">退出登录</button>
     </header>
 
     <div class="tabs">
@@ -678,6 +785,38 @@ export function getAdminHtml(): string {
         </div>
         <div id="providers-list"></div>
       </div>
+
+      <details id="add-subscription-section" class="add-panel">
+        <summary>添加订阅</summary>
+        <div class="card">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>订阅名称</label>
+              <input id="update-name" placeholder="主订阅">
+            </div>
+            <div class="form-group">
+              <label>订阅 Slug</label>
+              <input id="update-slug" placeholder="main">
+            </div>
+            <div class="form-group">
+              <label>订阅地址</label>
+              <input id="update-url" placeholder="https://example.com/one-time-url">
+            </div>
+            <div class="form-group">
+              <label>User-Agent</label>
+              <select id="update-user-agent-select" onchange="changeUserAgentMode('update')">
+                <option value="clash-verge/v2.4.5">clash-verge/v2.4.5</option>
+                <option value="clash.meta/1.19.20">clash.meta/1.19.20</option>
+                <option value="SlClash clash-verge Platform/android">SlClash clash-verge Platform/android</option>
+                <option value="__custom__">自定义</option>
+              </select>
+              <input id="update-user-agent-custom" maxlength="256" placeholder="输入自定义 User-Agent" style="display:none;margin-top:8px">
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="doUpdate()">测试并添加</button>
+          <div id="update-status" class="status-msg"></div>
+        </div>
+      </details>
     </div>
 
     <div id="tab-llm" class="tab-content">
@@ -690,9 +829,9 @@ export function getAdminHtml(): string {
         <div id="llm-keys-list"></div>
       </div>
 
-      <div class="update-section">
+      <details id="llm-add-panel" class="add-panel">
+        <summary>添加大模型密钥</summary>
         <div class="card">
-          <div class="section-title">添加大模型密钥</div>
           <div class="form-grid">
             <div class="form-group">
               <label>名称</label>
@@ -710,7 +849,7 @@ export function getAdminHtml(): string {
           <button class="btn btn-primary" onclick="saveLlmKey()">保存并添加</button>
           <div id="llm-status" class="status-msg" role="status" aria-live="polite"></div>
         </div>
-      </div>
+      </details>
     </div>
 
     <div id="tab-history" class="tab-content">
@@ -730,6 +869,7 @@ export function getAdminHtml(): string {
 
 
     <div id="tab-backup" class="tab-content">
+      <div class="backup-grid">
       <div class="card">
         <div class="card-title" style="margin-bottom:18px">WebDAV 同步</div>
         <p style="color:var(--text-dim);font-size:14px;margin-bottom:14px">
@@ -761,6 +901,7 @@ export function getAdminHtml(): string {
         </div>
         <div id="webdav-status" class="status-msg"></div>
       </div>
+      <div class="backup-col">
       <div class="card">
         <div class="card-title" style="margin-bottom:18px">导出通用母包</div>
         <p style="color:var(--text-dim);font-size:14px;margin-bottom:18px">
@@ -778,40 +919,11 @@ export function getAdminHtml(): string {
         <button id="import-button" class="btn btn-primary" onclick="doUnifiedImport()">验证并导入</button>
         <div id="import-status" class="status-msg" role="status" aria-live="polite"></div>
       </div>
-    </div>
-
-    <!-- Add subscription card — always visible below all tabs -->
-    <div id="add-subscription-section" class="update-section" style="margin-top:28px">
-      <div class="card">
-        <div class="section-title">添加订阅</div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label>订阅名称</label>
-            <input id="update-name" placeholder="主订阅">
-          </div>
-          <div class="form-group">
-            <label>订阅 Slug</label>
-            <input id="update-slug" placeholder="main">
-          </div>
-          <div class="form-group">
-            <label>订阅地址</label>
-            <input id="update-url" placeholder="https://example.com/one-time-url">
-          </div>
-          <div class="form-group">
-            <label>User-Agent</label>
-            <select id="update-user-agent-select" onchange="changeUserAgentMode('update')">
-              <option value="clash-verge/v2.4.5">clash-verge/v2.4.5</option>
-              <option value="clash.meta/1.19.20">clash.meta/1.19.20</option>
-              <option value="SlClash clash-verge Platform/android">SlClash clash-verge Platform/android</option>
-              <option value="__custom__">自定义</option>
-            </select>
-            <input id="update-user-agent-custom" maxlength="256" placeholder="输入自定义 User-Agent" style="display:none;margin-top:8px">
-          </div>
-        </div>
-        <button class="btn btn-primary" onclick="doUpdate()">测试并添加</button>
-        <div id="update-status" class="status-msg"></div>
+      </div>
       </div>
     </div>
+
+    <!-- Add subscription panel lives inside the list tab, above. -->
   </div>
 
   <!-- Edit subscription modal -->
@@ -1035,15 +1147,6 @@ export function getAdminHtml(): string {
       });
     });
 
-    // The "添加订阅" card sits outside the tab panes; hide it while the LLM
-    // credential tab is active so the two resource types stay visually separate.
-    document.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        const section = document.getElementById('add-subscription-section');
-        if (section) section.style.display = tab.dataset.tab === 'llm' ? 'none' : '';
-      });
-    });
-
     async function api(path, opts = {}) {
       const resp = await fetch(path, {
         ...opts,
@@ -1104,10 +1207,10 @@ export function getAdminHtml(): string {
         html += '<tr data-provider-slug="' + esc(p.slug) + '">';
         html += '<td class="order-cell"><span class="drag-handle" title="拖动排序" aria-label="拖动排序">⋮⋮</span><span class="order-number">' + (index + 1) + '</span></td>';
         html += '<td class="cell-primary">' + esc(p.name || p.slug) + '</td>';
-        html += '<td class="mono">' + esc(p.slug) + '</td>';
-        html += '<td data-label="更新">' + (ver ? new Date(ver.updatedAt).toLocaleString() : '-') + '</td>';
-        html += '<td data-label="节点">' + p.nodeCount + '</td>';
-        html += '<td><div class="btn-group">';
+        html += '<td class="mono cell-meta">' + esc(p.slug) + '</td>';
+        html += '<td class="cell-time">' + (ver ? new Date(ver.updatedAt).toLocaleString() : '-') + '</td>';
+        html += '<td class="cell-meta" data-label="节点">' + p.nodeCount + '</td>';
+        html += '<td class="cell-actions"><div class="btn-group">';
         // The full config link is the everyday action, so it is the only primary
         // button in the row; everything else stays visually quiet.
         html += '<button class="btn btn-primary btn-sm" title="复制完整配置链接（Clash / Shadowrocket 通用配置）" onclick="copyConfigLink(\\'' + esc(p.slug) + '\\')">复制完整配置</button>';
@@ -1572,13 +1675,13 @@ export function getAdminHtml(): string {
         const v = e.version;
         html += '<tr data-history-slug="' + esc(e.slug) + '" data-history-version="' + esc(v.versionId) + '">';
         if (showSlugCol) html += '<td class="mono cell-primary">' + esc(e.slug) + '</td>';
-        html += '<td' + (showSlugCol ? ' data-label="时间"' : ' class="cell-primary"') + '>' + new Date(v.createdAt).toLocaleString() + '</td>';
-        html += '<td data-label="节点">' + v.nodeCount + '</td>';
-        html += '<td class="mono" data-label="SHA-256">' + esc(v.sha256Prefix) + '</td>';
-        html += '<td data-label="大小">' + (v.contentLength / 1024).toFixed(1) + ' KB</td>';
-        html += '<td class="mono" data-label="来源">' + esc(v.sourceHost) + '</td>';
+        html += '<td' + (showSlugCol ? ' class="cell-time"' : ' class="cell-primary"') + '>' + new Date(v.createdAt).toLocaleString() + '</td>';
+        html += '<td class="cell-meta" data-label="节点">' + v.nodeCount + '</td>';
+        html += '<td class="mono cell-meta" data-label="SHA-256">' + esc(v.sha256Prefix) + '</td>';
+        html += '<td class="cell-meta" data-label="大小">' + (v.contentLength / 1024).toFixed(1) + ' KB</td>';
+        html += '<td class="mono cell-meta" data-label="来源">' + esc(v.sourceHost) + '</td>';
         html += '<td>' + (v.isCurrent ? '<span class="badge badge-current">当前</span>' : '') + '</td>';
-        html += '<td><div class="btn-group">';
+        html += '<td class="cell-actions"><div class="btn-group">';
         html += '<button class="btn btn-outline btn-sm" onclick="showMeta(\\'' + esc(e.slug) + '\\', \\'' + esc(v.versionId) + '\\')">元数据</button>';
         if (!v.isCurrent) {
           html += '<button class="btn btn-outline btn-sm" onclick="doRollback(\\'' + esc(e.slug) + '\\', \\'' + esc(v.versionId) + '\\')">回滚</button>';
@@ -1949,10 +2052,10 @@ export function getAdminHtml(): string {
         const item = keys[index];
         html += '<tr data-llm-slug="' + esc(item.slug) + '">';
         html += '<td class="cell-primary">' + esc(item.name) + '</td>';
-        html += '<td class="mono">' + esc(item.slug) + '</td>';
-        html += '<td class="mono" data-label="密钥">' + maskedLlmHint(item) + '</td>';
-        html += '<td data-label="更新">' + (item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-') + '</td>';
-        html += '<td><div class="btn-group">';
+        html += '<td class="mono cell-meta">' + esc(item.slug) + '</td>';
+        html += '<td class="mono cell-meta" data-label="密钥">' + maskedLlmHint(item) + '</td>';
+        html += '<td class="cell-time">' + (item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-') + '</td>';
+        html += '<td class="cell-actions"><div class="btn-group">';
         html += '<button class="btn btn-primary btn-sm" onclick="openLlmView(\\'' + esc(item.slug) + '\\')">查看/复制</button>';
         html += '<button class="btn btn-outline btn-sm" onclick="openLlmModal(\\'' + esc(item.slug) + '\\')">编辑</button>';
         html += '<button class="btn btn-outline btn-sm" onclick="removeLlmKey(\\'' + esc(item.slug) + '\\')">删除</button>';
