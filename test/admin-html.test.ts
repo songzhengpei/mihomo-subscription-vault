@@ -121,14 +121,18 @@ describe("admin unified import UI", () => {
 
     expect(html).toContain("拖动排序");
     expect(html).toContain("/api/providers/order");
-    expect(html).toContain("复制 Clash/Shadowrocket 通用配置");
+    // The everyday action is the primary button; the long description moved to
+    // the title attribute so it is still discoverable.
+    expect(html).toContain(">复制完整配置</button>");
+    expect(html).toContain("复制完整配置链接（Clash / Shadowrocket 通用配置）");
+    expect(html).toContain("复制 Provider 链接（mihomo proxy-providers 用）");
     expect(html).toContain("顺序已保存");
     expect(html).toContain("touchstart");
     expect(html).toContain("document.ontouchmove");
     expect(html).toContain("target.parentElement.insertBefore");
     expect(html).toContain("window.matchMedia('(pointer: fine)').matches");
-    expect(html).toContain("max-width: 1600px");
-    expect(html).toContain("padding: 32px 80px");
+    expect(html).toContain("max-width: 1200px");
+    expect(html).toContain("padding: 24px 32px");
     expect(html).toContain("width: 48px");
     expect(html).toContain(".order-number { display: none; }");
     expect(html).toContain(
@@ -137,6 +141,42 @@ describe("admin unified import UI", () => {
     expect(html).toContain("elementFromPoint");
     expect(html).toContain("subscription-card");
     expect(html).not.toContain("width: fit-content");
+  });
+
+  it("keeps row actions inline with one primary action per row", () => {
+    const html = getAdminHtml();
+
+    // No overflow menu: every action stays one click away.
+    expect(html).not.toContain("overflow-menu");
+    // Destructive actions are no longer the loudest thing in the row.
+    expect(html).not.toContain("btn btn-danger btn-sm");
+    const providers = html.slice(
+      html.indexOf("function renderProviders"),
+      html.indexOf("function bindProviderSorting"),
+    );
+    expect(providers.match(/btn-primary/g)).toHaveLength(1);
+    const keys = html.slice(
+      html.indexOf("function renderLlmKeys"),
+      html.indexOf("async function loadLlmKeys"),
+    );
+    expect(keys.match(/btn-primary/g)).toHaveLength(1);
+  });
+
+  it("stacks list rows on narrow screens instead of squeezing the table", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain('class="table table-stack"');
+    expect(html).toContain(".table-stack thead { display: none; }");
+    expect(html).toContain(".table-stack .cell-primary {");
+    expect(html).toContain('content: attr(data-label) " "');
+    expect(html).toContain(".table-stack .btn-group { flex-wrap: wrap;");
+    // The name cell must never collapse to one character per line again.
+    expect(html).toContain('class="cell-primary"');
+    // Fields share a row instead of one full-width input per line.
+    expect(html).toContain(".form-grid {");
+    expect(html).toContain(
+      "grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))",
+    );
   });
 
   it("uses the shared User-Agent presets without exposing slug in edit", () => {

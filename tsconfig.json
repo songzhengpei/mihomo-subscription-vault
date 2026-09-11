@@ -17,6 +17,6 @@
     "allowImportingTsExtensions": true,
     "noUncheckedIndexedAccess": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/upstream-relay.mjs"],
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/upstream-relay.mjs", "scripts/preview-ui.mjs"],
   "exclude": ["node_modules"]
 }

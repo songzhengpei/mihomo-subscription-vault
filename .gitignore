@@ -7,3 +7,4 @@ DEPLOY-INFO.md
 *.log
 .DS_Store
 coverage/
+preview/
