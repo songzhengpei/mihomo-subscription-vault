@@ -542,10 +542,10 @@ export function getAdminHtml(): string {
 
     <div class="tabs">
       <button class="tab active" data-tab="list">订阅列表</button>
+      <button class="tab" data-tab="llm">大模型密钥</button>
       <button class="tab" data-tab="history">历史版本</button>
       <!-- staging tab hidden — backend APIs preserved, re-add button to restore -->
       <button class="tab" data-tab="backup">导入与导出</button>
-      <button class="tab" data-tab="llm">大模型密钥</button>
     </div>
 
     <div id="tab-list" class="tab-content active">
@@ -555,6 +555,37 @@ export function getAdminHtml(): string {
           <button class="btn btn-outline btn-sm" onclick="loadProviders()">刷新</button>
         </div>
         <div id="providers-list"></div>
+      </div>
+    </div>
+
+    <div id="tab-llm" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">所有大模型密钥</span>
+          <button class="btn btn-outline btn-sm" onclick="loadLlmKeys()">刷新</button>
+        </div>
+        <div id="llm-store-note" class="status-msg" role="alert"></div>
+        <div id="llm-keys-list"></div>
+      </div>
+
+      <div class="update-section">
+        <div class="card">
+          <div class="section-title">添加大模型密钥</div>
+          <div class="form-group">
+            <label>名称</label>
+            <input id="llm-add-name" placeholder="DeepSeek 主账号">
+          </div>
+          <div class="form-group">
+            <label>Slug</label>
+            <input id="llm-add-slug" placeholder="deepseek">
+          </div>
+          <div class="form-group">
+            <label>API Key</label>
+            <input id="llm-add-key" type="password" autocomplete="off" placeholder="sk-...">
+          </div>
+          <button class="btn btn-primary" onclick="saveLlmKey()">保存并添加</button>
+          <div id="llm-status" class="status-msg" role="status" aria-live="polite"></div>
+        </div>
       </div>
     </div>
 
@@ -620,25 +651,6 @@ export function getAdminHtml(): string {
         <input id="import-file" class="file-picker" type="file" accept=".zip,application/zip">
         <button id="import-button" class="btn btn-primary" onclick="doUnifiedImport()">验证并导入</button>
         <div id="import-status" class="status-msg" role="status" aria-live="polite"></div>
-      </div>
-    </div>
-
-    <div id="tab-llm" class="tab-content">
-      <div class="card">
-        <div class="card-header">
-          <span class="card-title">大模型密钥</span>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button class="btn btn-outline btn-sm" onclick="loadLlmKeys()">刷新</button>
-            <button class="btn btn-primary btn-sm" onclick="openLlmModal()">新增密钥</button>
-          </div>
-        </div>
-        <p style="color:var(--text-dim);font-size:14px;margin-bottom:14px">
-          凭据以 AES-GCM 加密保存在 R2 中，不会出现在统一母包导出与 WebDAV 备份里。
-          此处仅用于人工复制，不提供公开下载地址。
-        </p>
-        <div id="llm-store-note" class="status-msg" role="alert"></div>
-        <div id="llm-keys-list"></div>
-        <div id="llm-status" class="status-msg" role="status" aria-live="polite"></div>
       </div>
     </div>
 
@@ -718,38 +730,22 @@ export function getAdminHtml(): string {
   <!-- LLM credential modal -->
   <div id="llm-modal" class="modal-overlay">
     <div class="modal">
-      <h3 id="llm-modal-title">新增大模型密钥</h3>
+      <h3>编辑大模型密钥</h3>
       <div class="form-group">
         <label>名称</label>
-        <input id="llm-name" placeholder="DeepSeek 主账号">
+        <input id="llm-name">
       </div>
       <div class="form-group">
         <label>Slug</label>
-        <input id="llm-slug" placeholder="deepseek-main">
-      </div>
-      <div class="form-group">
-        <label>平台标识</label>
-        <input id="llm-provider" placeholder="deepseek">
-      </div>
-      <div class="form-group">
-        <label>API Base URL</label>
-        <input id="llm-base-url" placeholder="https://api.deepseek.com">
-      </div>
-      <div class="form-group">
-        <label>模型（每行一个，可留空）</label>
-        <textarea id="llm-models" rows="3" placeholder="deepseek-chat"></textarea>
+        <input id="llm-slug" disabled>
       </div>
       <div class="form-group">
         <label>API Key</label>
-        <input id="llm-api-key" type="password" autocomplete="off" placeholder="编辑时留空表示不修改">
-      </div>
-      <div class="form-group">
-        <label>备注（请勿在此填写真实密钥）</label>
-        <input id="llm-notes">
+        <input id="llm-api-key" type="password" autocomplete="off" placeholder="留空表示不修改">
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
         <button class="btn btn-outline btn-sm" onclick="closeLlmModal()">取消</button>
-        <button class="btn btn-primary btn-sm" onclick="saveLlmKey()">保存</button>
+        <button class="btn btn-primary btn-sm" onclick="saveLlmEdit()">保存并更新</button>
       </div>
       <div id="llm-modal-status" class="status-msg"></div>
     </div>
@@ -1696,20 +1692,17 @@ export function getAdminHtml(): string {
     function renderLlmKeys(keys) {
       const el = document.getElementById('llm-keys-list');
       if (!keys.length) {
-        el.innerHTML = '<div class="empty">暂无凭据，点击「新增密钥」添加一条。</div>';
+        el.innerHTML = '<div class="empty">暂无大模型密钥，请在下方「添加大模型密钥」中添加一条。</div>';
         return;
       }
       let html = '<table class="table"><thead><tr>';
-      html += '<th>名称</th><th>平台</th><th>Slug</th><th>模型</th><th>密钥</th><th>更新时间</th><th>操作</th>';
+      html += '<th>名称</th><th>Slug</th><th>密钥</th><th>更新时间</th><th>操作</th>';
       html += '</tr></thead><tbody>';
       for (let index = 0; index < keys.length; index++) {
         const item = keys[index];
-        const modelCount = item.models && item.models.length ? String(item.models.length) : '-';
         html += '<tr data-llm-slug="' + esc(item.slug) + '">';
         html += '<td>' + esc(item.name) + '</td>';
-        html += '<td class="mono">' + esc(item.provider) + '</td>';
         html += '<td class="mono">' + esc(item.slug) + '</td>';
-        html += '<td>' + modelCount + '</td>';
         html += '<td class="mono">' + maskedLlmHint(item) + '</td>';
         html += '<td>' + (item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-') + '</td>';
         html += '<td><div class="btn-group">';
@@ -1755,15 +1748,9 @@ export function getAdminHtml(): string {
       for (let index = 0; index < llmKeys.length; index++) {
         if (llmKeys[index].slug === slug) editing = llmKeys[index];
       }
-      document.getElementById('llm-modal-title').textContent = editing ? '编辑大模型密钥' : '新增大模型密钥';
       document.getElementById('llm-name').value = editing ? editing.name : '';
       document.getElementById('llm-slug').value = editing ? editing.slug : '';
-      document.getElementById('llm-slug').disabled = !!editing;
-      document.getElementById('llm-provider').value = editing ? editing.provider : '';
-      document.getElementById('llm-base-url').value = editing ? editing.baseUrl : '';
-      document.getElementById('llm-models').value = editing && editing.models ? editing.models.join('\\n') : '';
       document.getElementById('llm-api-key').value = '';
-      document.getElementById('llm-notes').value = '';
       const status = document.getElementById('llm-modal-status');
       status.className = 'status-msg';
       status.textContent = '';
@@ -1776,55 +1763,60 @@ export function getAdminHtml(): string {
       llmEditingSlug = null;
     }
 
+    // Add form (下方「添加大模型密钥」), mirrors the subscription add flow.
     async function saveLlmKey() {
-      const status = document.getElementById('llm-modal-status');
-      const name = document.getElementById('llm-name').value.trim();
-      const slug = document.getElementById('llm-slug').value.trim();
-      const provider = document.getElementById('llm-provider').value.trim();
-      const baseUrl = document.getElementById('llm-base-url').value.trim();
-      const apiKey = document.getElementById('llm-api-key').value.trim();
-      const notes = document.getElementById('llm-notes').value.trim();
-      const models = document.getElementById('llm-models').value
-        .split('\\n')
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0);
-      if (!name || !provider || !baseUrl) {
-        showStatus(status, false, '名称、平台标识和 API Base URL 不能为空');
+      const status = document.getElementById('llm-status');
+      const name = document.getElementById('llm-add-name').value.trim();
+      const slug = document.getElementById('llm-add-slug').value.trim();
+      const apiKey = document.getElementById('llm-add-key').value.trim();
+      if (!name || !slug || !apiKey) {
+        showStatus(status, false, '请填写所有字段');
         return;
       }
-      const payload = { name: name, provider: provider, baseUrl: baseUrl, models: models, notes: notes };
-      if (apiKey) payload.apiKey = apiKey;
-      showStatus(status, true, '正在保存…');
+      showStatus(status, true, '正在保存...');
       try {
-        let result;
-        if (llmEditingSlug) {
-          result = await api('/api/llm/keys/' + encodeURIComponent(llmEditingSlug), {
-            method: 'PUT',
-            body: JSON.stringify(payload),
-          });
-        } else {
-          if (!slug) {
-            showStatus(status, false, 'Slug 不能为空');
-            return;
-          }
-          if (!apiKey) {
-            showStatus(status, false, '新增时必须填写 API Key');
-            return;
-          }
-          payload.slug = slug;
-          payload.apiKey = apiKey;
-          result = await api('/api/llm/keys', {
-            method: 'POST',
-            body: JSON.stringify(payload),
-          });
+        const result = await api('/api/llm/keys', {
+          method: 'POST',
+          body: JSON.stringify({ slug: slug, name: name, apiKey: apiKey }),
+        });
+        if (!result.ok) {
+          showStatus(status, false, result.error && result.error.message ? result.error.message : '保存失败');
+          return;
         }
+        document.getElementById('llm-add-name').value = '';
+        document.getElementById('llm-add-slug').value = '';
+        document.getElementById('llm-add-key').value = '';
+        await loadLlmKeys({ silent: true });
+        showStatus(status, true, '已添加：' + name);
+      } catch (error) {
+        showStatus(status, false, error && error.message ? error.message : '保存失败');
+      }
+    }
+
+    // Edit modal: only 名称 and（可选）轮换 API Key。
+    async function saveLlmEdit() {
+      const status = document.getElementById('llm-modal-status');
+      const name = document.getElementById('llm-name').value.trim();
+      const apiKey = document.getElementById('llm-api-key').value.trim();
+      if (!name) {
+        showStatus(status, false, '名称不能为空');
+        return;
+      }
+      showStatus(status, true, '正在保存...');
+      try {
+        const payload = { name: name };
+        if (apiKey) payload.apiKey = apiKey;
+        const result = await api('/api/llm/keys/' + encodeURIComponent(llmEditingSlug), {
+          method: 'PUT',
+          body: JSON.stringify(payload),
+        });
         if (!result.ok) {
           showStatus(status, false, result.error && result.error.message ? result.error.message : '保存失败');
           return;
         }
         closeLlmModal();
         await loadLlmKeys({ silent: true });
-        setLlmStatus(true, '已保存');
+        setLlmStatus(true, '已更新：' + name);
       } catch (error) {
         showStatus(status, false, error && error.message ? error.message : '保存失败');
       }

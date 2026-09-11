@@ -170,6 +170,57 @@ describe("admin LLM credential UI", () => {
     expect(html).toContain('data-tab="list"');
   });
 
+  it("orders the credential tab directly after the subscription list", () => {
+    const html = getAdminHtml();
+    const tabs = html.slice(
+      html.indexOf('<div class="tabs">'),
+      html.indexOf("</div>", html.indexOf('<div class="tabs">')),
+    );
+
+    expect(tabs.indexOf('data-tab="list"')).toBeGreaterThan(-1);
+    expect(tabs.indexOf('data-tab="llm"')).toBeGreaterThan(
+      tabs.indexOf('data-tab="list"'),
+    );
+    expect(tabs.indexOf('data-tab="llm"')).toBeLessThan(
+      tabs.indexOf('data-tab="history"'),
+    );
+    expect(tabs.indexOf('data-tab="llm"')).toBeLessThan(
+      tabs.indexOf('data-tab="backup"'),
+    );
+    // 大模型密钥 tab content is placed right after the subscription list pane.
+    expect(html.indexOf('id="tab-llm"')).toBeGreaterThan(
+      html.indexOf('id="tab-list"'),
+    );
+    expect(html.indexOf('id="tab-llm"')).toBeLessThan(
+      html.indexOf('id="tab-history"'),
+    );
+  });
+
+  it("keeps the credential form down to name, slug and API key", () => {
+    const html = getAdminHtml();
+    const pane = html.slice(
+      html.indexOf('id="tab-llm"'),
+      html.indexOf('id="add-subscription-section"'),
+    );
+
+    // Mirrors the 添加订阅 card: same section/card/form-group markup.
+    expect(pane).toContain('<div class="section-title">添加大模型密钥</div>');
+    expect(pane).toContain('class="form-group"');
+    expect(pane).toContain('id="llm-add-name"');
+    expect(pane).toContain('id="llm-add-slug"');
+    expect(pane).toContain('id="llm-add-key"');
+    expect(pane).toContain(">保存并添加</button>");
+    expect(pane).toContain('<div class="card-header">');
+    expect(pane).toContain('id="llm-keys-list"');
+    // The removed fields must not come back.
+    expect(pane).not.toContain("平台标识");
+    expect(pane).not.toContain("Base URL");
+    expect(pane).not.toContain("llm-add-provider");
+    expect(pane).not.toContain("llm-add-models");
+    // Subscription add form stays out of this pane.
+    expect(pane).not.toContain('id="add-subscription-section"');
+  });
+
   it("keeps the sealed credential rules in the inline script", () => {
     const html = getAdminHtml();
 

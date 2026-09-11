@@ -140,11 +140,14 @@ llm/{slug}/secret.v1.enc.json    # AES-GCM 密文（仅在 reveal / 校验时读
 | --- | --- |
 | `slug` | 复用现有 `validateSlug`（`src/security/ssrf.ts`），`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$` |
 | `name` | 1–64 字符，去除首尾空白后非空 |
-| `provider` | 1–32 字符，`[a-z0-9._-]` |
-| `baseUrl` | 必须为合法 `https:` URL，不得内嵌用户名密码（对齐 `validateWebDAVUrl` 的判定口径） |
-| `models` | 数组，≤ 100 项，每项 1–128 字符 |
-| `notes` | ≤ 2000 字符 |
-| `tags` | 数组，≤ 20 项，每项 1–32 字符 |
+| `provider` | **可选**（UI 不采集）。留空存 `""`；提供时须为 1–32 字符 `[a-z0-9._-]` |
+| `baseUrl` | **可选**（UI 不采集）。留空存 `""`；提供时须为合法 `https:` URL，不得内嵌用户名密码 |
+| `models` | 可选数组，≤ 100 项，每项 1–128 字符 |
+| `notes` | 可选，≤ 2000 字符 |
+| `tags` | 可选数组，≤ 20 项，每项 1–32 字符 |
+
+**UI 只采集 `name` / `slug` / `apiKey` 三项**（见 7.3）。其余字段保留在数据模型与 API 中，
+以便将来需要时无需迁移即可启用；`provider` / `baseUrl` 留空时存空字符串，属于合法状态。
 
 **slug 空间与订阅 slug 相互独立**：`llm/deepseek` 与 `providers/deepseek` 不冲突，
 因为前缀不同。文档与 UI 需要明示这一点，避免使用者误以为两者联动。
@@ -301,22 +304,19 @@ AES key  = HKDF-Expand(PRK, info = "msv/llm-credential/v1", L = 32)
 列表只对 `secret` 做 `head()` 判断存在性（`secretPresent`），**不读体、不算哈希**，
 以保证列表响应时间与凭据数量线性且廉价。完整哈希校验放在详情与 reveal。
 
-`POST /api/llm/keys` 请求体：
+`POST /api/llm/keys` 请求体（后台实际提交的最小形态）：
 
 ```json
 {
-  "slug": "deepseek-main",
+  "slug": "deepseek",
   "name": "DeepSeek 主账号",
-  "provider": "deepseek",
-  "baseUrl": "https://api.deepseek.com",
-  "models": ["deepseek-chat", "deepseek-reasoner"],
-  "notes": "",
-  "tags": [],
   "apiKey": "<平台密钥>"
 }
 ```
 
-→ `201 { "ok": true, "data": { "slug": "deepseek-main" } }`
+其余元数据字段（`provider` / `baseUrl` / `models` / `notes` / `tags`）仍可传，均为可选。
+
+→ `201 { "ok": true, "data": { "slug": "deepseek" } }`
 
 `PUT /api/llm/keys/{slug}` 请求体：上述元数据字段均可选；
 若携带非空 `apiKey`，则执行第 4.4 节的轮换流程。
@@ -380,7 +380,7 @@ AES key  = HKDF-Expand(PRK, info = "msv/llm-credential/v1", L = 32)
 推荐 A 的四条理由：
 
 1. **字段与操作没有交集**：订阅行是"节点数 / 更新时间 / 编辑 / 更新 / Provider 链接"，
-   凭据行是"平台 / 模型数 / 编辑 / 查看并复制 / 删除"。
+   凭据行是"密钥 / 更新时间 / 编辑 / 查看并复制 / 删除"。
 2. **排序语义会被污染**：订阅列表有完整的拖拽排序（`/api/providers/order` +
    `vault/provider-order.json` + `target.parentElement.insertBefore` 逻辑），
    凭据混入后"第几个"这件事就没有意义了。
@@ -390,36 +390,60 @@ AES key  = HKDF-Expand(PRK, info = "msv/llm-credential/v1", L = 32)
 4. **风险分层**：凭据页面是唯一会出现明文的"高危页面"，独立后可以单独加二次确认、
    单独设定自动清空策略，完全不影响日常订阅操作。
 
-可选的低耦合增强：在订阅列表底部加一行**只读提示**——
-"另有 N 条大模型凭据，见「大模型密钥」"，点击切 tab。仅一个链接，无逻辑耦合。
+**tab 顺序**：「大模型密钥」紧跟「订阅列表」，即
+`订阅列表 | 大模型密钥 | 历史版本 | 导入与导出`，`#tab-llm` 区块在源码中同样紧随
+`#tab-list`。
 
 ### 7.2 tab 与懒加载
 
-在 `src/ui/admin-html.ts:542-547` 的 `.tabs` 中追加：
+在 `.tabs` 中插入（第二位）：
 
 ```html
 <button class="tab" data-tab="llm">大模型密钥</button>
 ```
 
 并新增 `<div id="tab-llm" class="tab-content">…</div>`，与既有 `tab-list` /
-`tab-history` / `tab-backup` 同级。tab 切换由 `admin-html.ts:789-795` 的通用监听器
-自动处理，无需改动。
+`tab-history` / `tab-backup` 同级。tab 切换由既有通用监听器自动处理，无需改动。
 
-数据懒加载需在 `admin-html.ts:796-798` 之后追加一个分支，风格对齐既有写法：
+数据懒加载在既有分支后追加一行，风格对齐既有写法：
 
 ```js
 if (name === 'llm' && !llmLoaded) { llmLoaded = true; loadLlmKeys({ silent: true }); }
 ```
 
-### 7.3 列表与操作
+订阅的「添加订阅」卡片位于所有 tab 之外，因此在「大模型密钥」tab 激活时用一段
+**追加的**监听器把它隐藏，避免同屏出现两个添加表单（不改动既有监听器）。
 
-表格列：名称 / 平台 / Slug / 模型数 / 密钥更新时间 / 操作。
+### 7.3 布局与表单：与订阅列表保持一致的样式
 
-操作按钮：
+样式完全复用订阅一侧的既有类，不新增 CSS：
 
-- **编辑** — 打开 modal，复用既有 `#edit-modal` 的交互模式（`admin-html.ts:1066`）。
-  编辑时 API Key 输入框留空表示"不修改"。
-- **查看并复制** — 调用 reveal，把明文写入剪贴板，并显示倒计时提示。
+```text
+#tab-llm
+├── .card > .card-header（.card-title「所有大模型密钥」+ 刷新按钮）   ← 对齐「所有订阅」
+│   └── #llm-keys-list（.table）
+└── .update-section > .card                                        ← 对齐「添加订阅」
+    ├── .section-title「添加大模型密钥」
+    ├── .form-group 名称    → #llm-add-name
+    ├── .form-group Slug    → #llm-add-slug
+    ├── .form-group API Key → #llm-add-key（type=password）
+    ├── 按钮「保存并添加」（.btn.btn-primary）
+    └── #llm-status（.status-msg）
+```
+
+- **列表在上、表单在下**：与订阅 tab 的信息层级一致，添加成功后原地刷新列表
+  （`loadLlmKeys({ silent: true })`），新条目立刻出现在上方。
+- **表单只保留 名称 / Slug / API Key 三项**，其余字段从 UI 移除（不删数据模型）。
+- 提交前校验文案与订阅侧对齐（"请填写所有字段"）。
+- 添加成功后清空三个输入框，其中 API Key 必须清空（明文不进 DOM 常驻）。
+
+列表列：**名称 / Slug / 密钥（打码）/ 更新时间 / 操作**。
+
+操作按钮（`.btn-outline.btn-sm`，与订阅行一致）：
+
+- **查看并复制** — 调用 reveal，把明文写入剪贴板。
+- **编辑** — 打开精简后的 modal（仅 名称 + API Key，Slug 只读展示）。
+  编辑时 API Key 留空表示"不修改"；填了则走 4.4 的轮换流程。
 - **删除** — 二次确认，文案风格对齐既有 `confirm('确认导入“'…)`。
 
 ### 7.4 明文呈现策略
@@ -743,6 +767,11 @@ R2 中的 `llm/` 数据不被任何主链路引用，**无需清理也不会产�
 
 ## 附：版本变更
 
+- **v3（2026-09-11）** 按实际使用反馈精简：UI 表单只保留 名称 / Slug / API Key，
+  `provider` / `baseUrl` 改为可选（留空存 `""`，数据模型保留字段不迁移）；
+  添加表单改为 tab 内联、样式对齐「添加订阅」，列表在上、表单在下；
+  「大模型密钥」tab 提到第二位；新增一条最小请求体测试与 tab 顺序断言。
+  部署后 `INSTANCE_SECRET` 已配置，生产端到端往返验证通过。
 - **v2（2026-08-27）** 新增第 8 节"备份策略"；第 7.1 节新增布局决策对比；
   测试计划新增母包守卫断言；扩展点中明确排除"并入母包"路线。
 - **v1（2026-08-27）** 初稿。

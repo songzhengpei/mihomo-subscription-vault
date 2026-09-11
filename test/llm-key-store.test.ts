@@ -264,7 +264,6 @@ describe("llm-key-store: validation", () => {
       "http://api.deepseek.com",
       "https://user:pass@api.deepseek.com",
       "not-a-url",
-      "",
     ];
     for (const baseUrl of cases) {
       expect(() => normalizeLlmKeyCreate(makeInput({ baseUrl }))).toThrow(
@@ -275,6 +274,40 @@ describe("llm-key-store: validation", () => {
       normalizeLlmKeyCreate(makeInput({ baseUrl: "https://api.deepseek.com" }))
         .baseUrl,
     ).toBe("https://api.deepseek.com");
+  });
+
+  it("accepts name/slug/apiKey alone", async () => {
+    // The management UI only collects these three fields.
+    const minimal = {
+      slug: "deepseek",
+      name: "DeepSeek 主账号",
+      apiKey: "sk-minimal-payload-0001",
+    };
+    const normalized = normalizeLlmKeyCreate(minimal);
+    expect(normalized.provider).toBe("");
+    expect(normalized.baseUrl).toBe("");
+    expect(normalized.models).toEqual([]);
+    expect(normalized.notes).toBe("");
+    expect(normalized.tags).toEqual([]);
+
+    const meta = await createLlmKey(
+      bucket,
+      INSTANCE_SECRET,
+      minimal,
+      FIXED_TIME,
+    );
+    expect(meta.slug).toBe("deepseek");
+    expect(meta.provider).toBe("");
+    expect(
+      (await revealLlmKey(bucket, INSTANCE_SECRET, "deepseek")).apiKey,
+    ).toBe("sk-minimal-payload-0001");
+  });
+
+  it("allows clearing provider and baseUrl on update", () => {
+    expect(normalizeLlmKeyUpdate({ provider: "", baseUrl: "" })).toEqual({
+      provider: "",
+      baseUrl: "",
+    });
   });
 
   it("rejects malformed names, providers, models and keys", () => {

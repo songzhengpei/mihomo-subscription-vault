@@ -119,8 +119,15 @@ function requireStringList(
   return result;
 }
 
-function requireBaseUrl(value: unknown): string {
-  const raw = requireText(value, "baseUrl", BASE_URL_MAX);
+function optionalBaseUrl(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") throw invalidPayload("baseUrl 必须是字符串");
+  const raw = value.trim();
+  // Optional: the management UI only collects name/slug/apiKey.
+  if (raw.length === 0) return "";
+  if (raw.length > BASE_URL_MAX) {
+    throw invalidPayload(`baseUrl 长度不能超过 ${BASE_URL_MAX} 个字符`);
+  }
   let url: URL;
   try {
     url = new URL(raw);
@@ -136,13 +143,17 @@ function requireBaseUrl(value: unknown): string {
   return raw;
 }
 
-function requireProvider(value: unknown): string {
-  if (typeof value !== "string" || !PROVIDER_RE.test(value.trim())) {
+function optionalProvider(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") throw invalidPayload("provider 必须是字符串");
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return "";
+  if (!PROVIDER_RE.test(trimmed)) {
     throw invalidPayload(
       "provider 只能是 1-32 位小写字母、数字、点、下划线或连字符",
     );
   }
-  return value.trim();
+  return trimmed;
 }
 
 function requireApiKey(value: unknown): string {
@@ -187,8 +198,8 @@ export function normalizeLlmKeyCreate(raw: unknown): LlmKeyCreateInput {
   return {
     slug: requireSlug(input.slug),
     name: requireText(input.name, "name", NAME_MAX),
-    provider: requireProvider(input.provider),
-    baseUrl: requireBaseUrl(input.baseUrl),
+    provider: optionalProvider(input.provider),
+    baseUrl: optionalBaseUrl(input.baseUrl),
     models: requireStringList(
       input.models,
       "models",
@@ -211,10 +222,10 @@ export function normalizeLlmKeyUpdate(raw: unknown): LlmKeyUpdateInput {
     patch.name = requireText(input.name, "name", NAME_MAX);
   }
   if (input.provider !== undefined) {
-    patch.provider = requireProvider(input.provider);
+    patch.provider = optionalProvider(input.provider);
   }
   if (input.baseUrl !== undefined) {
-    patch.baseUrl = requireBaseUrl(input.baseUrl);
+    patch.baseUrl = optionalBaseUrl(input.baseUrl);
   }
   if (input.models !== undefined) {
     patch.models = requireStringList(

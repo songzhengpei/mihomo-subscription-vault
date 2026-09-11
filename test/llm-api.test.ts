@@ -244,6 +244,29 @@ describe("llm-api: authentication", () => {
 // ---------------------------------------------------------------------------
 
 describe("llm-api: lifecycle", () => {
+  it("creates a credential from name/slug/apiKey alone", async () => {
+    // Matches what the management UI now submits.
+    const response = await callApi("/api/llm/keys", {
+      method: "POST",
+      body: { slug: "deepseek", name: "DeepSeek 主账号", apiKey: API_KEY },
+    });
+    expect(response.status).toBe(201);
+    expect((await jsonOf(response)).data?.slug).toBe("deepseek");
+
+    const detail = JSON.parse(
+      await (await callApi("/api/llm/keys/deepseek")).text(),
+    ).data.key;
+    expect(detail.provider).toBe("");
+    expect(detail.baseUrl).toBe("");
+    expect(detail.models).toEqual([]);
+    expect(detail.integrity).toBe("ok");
+
+    const reveal = await callApi("/api/llm/keys/deepseek/reveal", {
+      method: "POST",
+    });
+    expect((await jsonOf(reveal)).data?.apiKey).toBe(API_KEY);
+  });
+
   it("creates, lists, reads, updates, reveals and deletes", async () => {
     const created = await createOne();
     expect(created.status).toBe(201);
