@@ -277,7 +277,8 @@ describe("admin LLM credential UI", () => {
       html.indexOf('id="llm-modal"'),
     );
 
-    expect(modal).toContain("API Key");
+    expect(modal).toContain('id="llm-view-title"');
+    expect(modal).toContain('class="modal-subtitle">API Key<');
     expect(modal).toContain('id="llm-view-secret"');
     expect(modal).toContain('onclick="copyLlmPlain()"');
     expect(modal).toContain('onclick="closeLlmView()"');
@@ -292,9 +293,23 @@ describe("admin LLM credential UI", () => {
 
     // Row action opens the viewer; naming matches what it does.
     expect(html).toContain("openLlmView(");
-    expect(html).toContain(">查看</button>");
+    expect(html).toContain(">查看/复制</button>");
     expect(html).not.toContain("查看并复制");
     expect(html).not.toContain("copyLlmKey");
+  });
+
+  it("titles the viewer with the credential name", () => {
+    const html = getAdminHtml();
+    const start = html.indexOf("async function openLlmView");
+    const end = html.indexOf("async function copyLlmPlain", start);
+    const block = html.slice(start, end);
+
+    expect(block).toContain(
+      "document.getElementById('llm-view-title').textContent",
+    );
+    expect(block).toContain("cached && cached.name ? cached.name : slug");
+    // Name comes from the list cache, so it renders before the key arrives.
+    expect(block).toContain("llmKeys.filter");
   });
 
   it("reveals the full key as soon as the viewer opens", () => {

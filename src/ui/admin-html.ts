@@ -500,6 +500,21 @@ export function getAdminHtml(): string {
       padding: 20px;
     }
 
+    /* Viewer header: credential name as the title, with a quiet label below it
+       using the same treatment as table headers. */
+    .modal .modal-title {
+      margin-bottom: 2px;
+      word-break: break-word;
+    }
+
+    .modal .modal-subtitle {
+      font-size: 12px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 14px;
+    }
+
     /* Credential plaintext: long tokens have no spaces, so they must be forced
        to wrap or they blow out the modal on narrow screens. user-select: all
        makes a single tap select the whole value on mobile. */
@@ -762,7 +777,8 @@ export function getAdminHtml(): string {
        opens it is already the explicit reveal step. -->
   <div id="llm-view-modal" class="modal-overlay">
     <div class="modal modal-sm">
-      <h3>API Key</h3>
+      <h3 id="llm-view-title" class="modal-title"></h3>
+      <div class="modal-subtitle">API Key</div>
       <span id="llm-view-secret" class="secret-value">正在读取...</span>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" onclick="copyLlmPlain()">复制</button>
@@ -1750,7 +1766,7 @@ export function getAdminHtml(): string {
         html += '<td class="mono">' + maskedLlmHint(item) + '</td>';
         html += '<td>' + (item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-') + '</td>';
         html += '<td><div class="btn-group">';
-        html += '<button class="btn btn-outline btn-sm" onclick="openLlmView(\\'' + esc(item.slug) + '\\')">查看</button>';
+        html += '<button class="btn btn-outline btn-sm" onclick="openLlmView(\\'' + esc(item.slug) + '\\')">查看/复制</button>';
         html += '<button class="btn btn-outline btn-sm" onclick="openLlmModal(\\'' + esc(item.slug) + '\\')">编辑</button>';
         html += '<button class="btn btn-outline btn-sm" onclick="removeLlmKey(\\'' + esc(item.slug) + '\\')">删除</button>';
         html += '</div></td>';
@@ -1891,6 +1907,11 @@ export function getAdminHtml(): string {
       llmViewSecret = null;
       const box = document.getElementById('llm-view-secret');
       const status = document.getElementById('llm-view-status');
+      // The row this was opened from is always in the list cache, so the title
+      // is correct before the key arrives; fall back to the slug just in case.
+      const cached = llmKeys.filter((item) => item.slug === slug)[0];
+      document.getElementById('llm-view-title').textContent =
+        cached && cached.name ? cached.name : slug;
       box.textContent = '正在读取...';
       status.className = 'status-msg';
       status.textContent = '';
