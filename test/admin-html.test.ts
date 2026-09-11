@@ -82,9 +82,12 @@ describe("admin unified import UI", () => {
     expect(backup.indexOf("WebDAV 同步")).toBeLessThan(
       backup.indexOf("本地同步"),
     );
-    // Export and import now share one card, described in one sentence.
+    // Export and import share one card, split into two labelled directions.
+    expect(backup).toContain("从云端导出");
+    expect(backup).toContain("把当前全部订阅打包成一个 ZIP 保存到本机。");
+    expect(backup).toContain("从本地导入");
     expect(backup).toContain(
-      "导出当前全部订阅的统一母包到本地文件，或选择本地 ZIP 文件导入。",
+      "选一个 ZIP 校验后写入云端，会创建可回滚的新版本。",
     );
     expect(backup.indexOf("导出通用母包")).toBeLessThan(
       backup.indexOf("验证并导入"),
@@ -130,13 +133,21 @@ describe("admin unified import UI", () => {
     expect(html).toContain("复制 Provider 链接（mihomo proxy-providers 用）");
     expect(html).toContain("顺序已保存");
     expect(html).toContain("touchstart");
-    expect(html).toContain("document.ontouchmove");
+    expect(html).toContain(
+      "document.addEventListener('touchmove', onProviderTouchMove, { passive: false })",
+    );
+    expect(html).toContain(
+      "document.addEventListener('touchend', onProviderTouchEnd)",
+    );
     expect(html).toContain("target.parentElement.insertBefore");
     expect(html).toContain("window.matchMedia('(pointer: fine)').matches");
     expect(html).toContain("max-width: 1200px");
     expect(html).toContain("padding: 24px 32px");
-    expect(html).toContain("width: 48px");
-    expect(html).toContain(".order-number { display: none; }");
+    // Touch reordering is armed by a long press on the row itself, so a plain
+    // swipe still scrolls; the desktop drag handle stays as the visible grip.
+    expect(html).toContain("TOUCH_HOLD_MS");
+    expect(html).toContain("drag-handle");
+    expect(html).toContain(".table .order-cell { display: none; }");
     expect(html).toContain(
       "#history-list .btn-group { justify-content: flex-end; }",
     );
@@ -373,12 +384,15 @@ describe("admin LLM credential UI", () => {
     expect(backup).toContain(
       'class="btn btn-primary" onclick="doUnifiedImport()"',
     );
-    // The file row carries its own bottom margin for plain form use; inside the
-    // action grid it must not stack on the gap, or the import button ends up
-    // further from the file row than every other row sits from each other.
-    expect(html).toContain(".backup-actions .file-picker {");
-    expect(html).toContain("margin-bottom: 0;");
-    expect(html).toContain("justify-self: stretch;");
+    // Import is disabled until a ZIP is actually chosen, and the dashed drop zone
+    // is a real drop target rather than decoration.
+    expect(backup).toContain(
+      'class="btn btn-primary" onclick="doUnifiedImport()" disabled',
+    );
+    expect(backup).toContain('<label id="import-drop" class="file-drop"');
+    expect(html).toContain("syncImportPick()");
+    expect(html).toContain("addEventListener('drop'");
+    expect(html).toContain("bindImportDrop()");
     // Phone widths keep the WebDAV button grid even.
     expect(html).toContain(
       ".webdav-actions { display: grid; grid-template-columns: 1fr 1fr; }",
@@ -394,6 +408,24 @@ describe("admin LLM credential UI", () => {
     expect(html).not.toContain("cell-primary");
     expect(html).not.toContain(".cell-actions");
     expect(html).toContain('class="table"');
+  });
+
+  it("tightens the phone chrome: centred logout and a single-row tab strip", () => {
+    const html = getAdminHtml();
+
+    // Logout drops out of the corner and is centred under the title block.
+    expect(html).toContain("position: static;");
+    expect(html).toContain("margin-top: 12px;");
+    // Four equal columns keep every tab on one line, even at 375px.
+    expect(html).toContain("grid-template-columns: repeat(4, 1fr);");
+    // The short labels are what make that fit.
+    expect(html).toContain('data-tab="llm">API Key</button>');
+    expect(html).toContain('data-tab="backup">导入导出</button>');
+    expect(html).not.toContain("导入与导出</button>");
+    // The phone action buttons match the local-sync buttons in size.
+    expect(html).toContain(
+      ".webdav-actions .btn { width: 100%; padding: 10px 10px; white-space: nowrap; }",
+    );
   });
 
   it("mirrors the subscription table's mobile horizontal scroll", () => {

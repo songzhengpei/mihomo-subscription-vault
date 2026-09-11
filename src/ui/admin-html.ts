@@ -348,6 +348,11 @@ export function getAdminHtml(): string {
       color: var(--text);
     }
 
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     .btn-group {
       display: flex;
       gap: 6px;
@@ -425,16 +430,6 @@ export function getAdminHtml(): string {
       background: rgba(217, 119, 6, 0.1);
       border: 1px solid rgba(217, 119, 6, 0.2);
       color: var(--warning);
-    }
-
-    .file-picker {
-      display: block;
-      width: 100%;
-      padding: 12px;
-      background: var(--surface-2);
-      border: 1px dashed var(--border);
-      border-radius: 8px;
-      margin-bottom: 14px;
     }
 
     .import-result {
@@ -538,22 +533,78 @@ export function getAdminHtml(): string {
     /* Two fields per row: address + remote path, then username + password. */
     .webdav-fields { grid-template-columns: 1fr 1fr; }
 
-    /* Local sync: one short action per line, stacked in reading order. The
-       buttons keep their natural width (a full-width button would be far too
-       loud here); only the file picker spans the card. */
+    /* Local sync: two labelled directions, each with its own action and its own
+       status, separated so export (a read) never reads as the first step of
+       import (a write). */
+    .sync-block + .sync-block {
+      margin-top: 18px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+    }
+
+    .sync-heading {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .sync-hint {
+      color: var(--text-dim);
+      font-size: 13px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+
+    /* One short action per line, stacked in reading order. The buttons keep
+       their natural width (a full-width button would be far too loud here); only
+       the drop zone spans the card. */
     .backup-actions {
       display: grid;
       gap: 12px;
       justify-items: start;
     }
 
-    /* The picker carries its own bottom margin for plain form use; inside this
-       grid that margin would stack on top of the row gap and make the import
-       button sit further from the file row than the other rows sit from each
-       other. */
-    .backup-actions .file-picker {
-      justify-self: stretch;
-      margin-bottom: 0;
+    /* The import entry point is a real drop target: the dashed border is now an
+       honest affordance and the chosen file is echoed back inside it. */
+    .file-drop {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 14px 16px;
+      background: var(--surface-2);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      color: var(--text-dim);
+      font-size: 14px;
+      line-height: 1.5;
+      text-align: center;
+      word-break: break-all;
+      cursor: pointer;
+    }
+
+    .file-drop:hover,
+    .file-drop.dragover {
+      border-color: var(--primary);
+      color: var(--text);
+    }
+
+    .file-drop.has-file {
+      border-style: solid;
+      border-color: var(--primary);
+      color: var(--text);
+    }
+
+    /* Kept in the layout tree (not display:none) so the label still forwards
+       clicks and the control stays reachable for assistive tech. */
+    .file-input-hidden {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      border: 0;
+      opacity: 0;
+      pointer-events: none;
     }
 
     /* Compact variant for single-value popups. */
@@ -626,29 +677,37 @@ export function getAdminHtml(): string {
       .table th { font-size: 12px; }
       .table th, .table td { padding: 10px 12px; }
       .btn-group { flex-direction: row; }
-      #providers-list .order-cell {
-        padding-left: 0;
-        text-align: left;
-      }
-      .drag-handle {
-        width: 48px;
-        height: 48px;
-      }
-      .order-number { display: none; }
       h1 { font-size: 18px; }
 
+      /* The logout control drops out of the corner and sits centred under the
+         title block, where a thumb can reach it. */
+      .topbar-logout {
+        position: static;
+        margin-top: 12px;
+      }
+
       /* A tab strip wider than the phone used to widen the whole page, clipping
-         the header, the cards and the last tab. Wrapping keeps every tab
-         reachable instead of hiding one off-screen. */
-      .tabs { flex-wrap: wrap; overflow-x: visible; margin-bottom: 18px; }
-      .tab { padding: 9px 12px; font-size: 14px; white-space: nowrap; }
+         the header, the cards and the last tab. Four equal columns keep every tab
+         on one line, and the shortened labels (API Key, 导入导出) leave enough
+         room even at 375px. */
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0;
+        overflow-x: visible;
+        margin-bottom: 18px;
+      }
+      .tab { padding: 9px 4px; font-size: 13px; white-space: nowrap; }
       header .btn { white-space: nowrap; }
+
       .backup-grid { grid-template-columns: 1fr; gap: 16px; }
       .backup-col { gap: 16px; }
       .webdav-fields { grid-template-columns: 1fr; }
-      /* Full-width action grid: no ragged rows with empty tails. */
+      /* Full-width action grid: no ragged rows with empty tails. The padding is
+         trimmed so the longest label (推送到 WebDAV) still fits a half-width cell
+         on a 375px phone; height and font match every other button. */
       .webdav-actions { display: grid; grid-template-columns: 1fr 1fr; }
-      .webdav-actions .btn { width: 100%; white-space: nowrap; font-size: 12px; }
+      .webdav-actions .btn { width: 100%; padding: 10px 10px; white-space: nowrap; }
 
       /* A phone keeps the real table and scrolls it sideways inside the card.
          min-width: max-content pins every column to its natural width, so no
@@ -657,6 +716,9 @@ export function getAdminHtml(): string {
       #providers-list > table,
       #history-list > table,
       #llm-keys-list > table { min-width: max-content; }
+      /* 顺序 only exists to hold the drag handle, and on a phone the whole row is
+         the drag target instead — so the column is pure cost and goes away. */
+      .table .order-cell { display: none; }
       .table .btn { padding: 6px 9px; font-size: 12px; }
     }
   </style>
@@ -700,10 +762,10 @@ export function getAdminHtml(): string {
 
     <div class="tabs">
       <button class="tab active" data-tab="list">订阅列表</button>
-      <button class="tab" data-tab="llm">大模型密钥</button>
+      <button class="tab" data-tab="llm">API Key</button>
       <button class="tab" data-tab="history">历史版本</button>
       <!-- staging tab hidden — backend APIs preserved, re-add button to restore -->
-      <button class="tab" data-tab="backup">导入与导出</button>
+      <button class="tab" data-tab="backup">导入导出</button>
     </div>
 
     <div id="tab-list" class="tab-content active">
@@ -833,16 +895,26 @@ export function getAdminHtml(): string {
       <div class="backup-col">
       <div class="card">
         <div class="card-title" style="margin-bottom:18px">本地同步</div>
-        <p style="color:var(--text-dim);font-size:14px;margin-bottom:14px">
-          导出当前全部订阅的统一母包到本地文件，或选择本地 ZIP 文件导入。
-        </p>
-        <div class="backup-actions">
-          <button class="btn btn-primary" onclick="doUnifiedExport()">导出通用母包</button>
-          <input id="import-file" class="file-picker" type="file" accept=".zip,application/zip">
-          <button id="import-button" class="btn btn-primary" onclick="doUnifiedImport()">验证并导入</button>
+        <div class="sync-block">
+          <div class="sync-heading">从云端导出</div>
+          <p class="sync-hint">把当前全部订阅打包成一个 ZIP 保存到本机。</p>
+          <div class="backup-actions">
+            <button class="btn btn-primary" onclick="doUnifiedExport()">导出通用母包</button>
+          </div>
+          <div id="unified-export-status" class="status-msg"></div>
         </div>
-        <div id="unified-export-status" class="status-msg"></div>
-        <div id="import-status" class="status-msg" role="status" aria-live="polite"></div>
+        <div class="sync-block">
+          <div class="sync-heading">从本地导入</div>
+          <p class="sync-hint">选一个 ZIP 校验后写入云端，会创建可回滚的新版本。</p>
+          <div class="backup-actions">
+            <label id="import-drop" class="file-drop" for="import-file">
+              <span id="import-file-name">点击选择 ZIP，或将文件拖到这里</span>
+            </label>
+            <input id="import-file" class="file-input-hidden" type="file" accept=".zip,application/zip">
+            <button id="import-button" class="btn btn-primary" onclick="doUnifiedImport()" disabled>验证并导入</button>
+          </div>
+          <div id="import-status" class="status-msg" role="status" aria-live="polite"></div>
+        </div>
       </div>
       </div>
       </div>
@@ -1153,6 +1225,12 @@ export function getAdminHtml(): string {
     let touchProviderSlug = '';
     let touchIdentifier = null;
 
+    // How long a finger has to rest on a row before it becomes draggable. A plain
+    // swipe has to keep scrolling the page and the table, so the drag is armed by
+    // a hold — and disarmed again the moment the finger travels.
+    const TOUCH_HOLD_MS = 350;
+    const TOUCH_HOLD_SLOP = 10;
+
     function clearTouchSorting() {
       touchProviderSlug = '';
       touchIdentifier = null;
@@ -1163,15 +1241,41 @@ export function getAdminHtml(): string {
 
     function bindProviderSorting() {
       document.querySelectorAll('#providers-list tr[data-provider-slug]').forEach(row => {
-        const handle = row.querySelector('.drag-handle');
         row.draggable = window.matchMedia('(pointer: fine)').matches;
-        handle.addEventListener('touchstart', event => {
+        // Touch has no drag handle (the 顺序 column is hidden on a phone), so the
+        // whole row is the target: long press to pick it up, then drag.
+        let holdTimer = 0;
+        let holdX = 0;
+        let holdY = 0;
+        const cancelHold = () => {
+          if (!holdTimer) return;
+          clearTimeout(holdTimer);
+          holdTimer = 0;
+        };
+        row.addEventListener('touchstart', event => {
           if (event.touches.length !== 1) return;
-          event.preventDefault();
-          touchProviderSlug = row.dataset.providerSlug || '';
-          touchIdentifier = event.touches[0].identifier;
-          row.classList.add('dragging');
-        }, { passive: false });
+          // Buttons keep their tap: only the row's own surface starts a drag.
+          if (event.target.closest('button, a, input, select, textarea')) return;
+          const touch = event.touches[0];
+          holdX = touch.clientX;
+          holdY = touch.clientY;
+          holdTimer = setTimeout(() => {
+            holdTimer = 0;
+            touchProviderSlug = row.dataset.providerSlug || '';
+            touchIdentifier = touch.identifier;
+            row.classList.add('dragging');
+          }, TOUCH_HOLD_MS);
+        }, { passive: true });
+        row.addEventListener('touchmove', event => {
+          if (!holdTimer) return;
+          const touch = event.touches[0];
+          if (!touch) return;
+          if (Math.abs(touch.clientX - holdX) > TOUCH_HOLD_SLOP || Math.abs(touch.clientY - holdY) > TOUCH_HOLD_SLOP) {
+            cancelHold();
+          }
+        }, { passive: true });
+        row.addEventListener('touchend', cancelHold);
+        row.addEventListener('touchcancel', cancelHold);
         row.addEventListener('dragstart', event => {
           draggedProviderSlug = row.dataset.providerSlug || '';
           row.classList.add('dragging');
@@ -1199,34 +1303,44 @@ export function getAdminHtml(): string {
         });
       });
 
-      document.ontouchmove = event => {
-        if (!touchProviderSlug) return;
-        const touch = Array.from(event.touches).find(item => item.identifier === touchIdentifier);
-        if (!touch) return;
-        event.preventDefault();
-        const source = document.querySelector('#providers-list tr[data-provider-slug="' + CSS.escape(touchProviderSlug) + '"]');
-        const target = document.elementFromPoint(touch.clientX, touch.clientY)
-          ?.closest('#providers-list tr[data-provider-slug]');
-        if (!source || !target || source === target) return;
-        const targetRect = target.getBoundingClientRect();
-        const insertBefore = touch.clientY < targetRect.top + targetRect.height / 2;
-        target.parentElement.insertBefore(source, insertBefore ? target : target.nextSibling);
-        target.classList.add('drag-over');
-        requestAnimationFrame(() => target.classList.remove('drag-over'));
-      };
-      document.ontouchend = event => {
-        if (!touchProviderSlug || !Array.from(event.changedTouches).some(item => item.identifier === touchIdentifier)) return;
-        event.preventDefault();
-        const slugs = Array.from(document.querySelectorAll('#providers-list tr[data-provider-slug]'))
-          .map(item => item.dataset.providerSlug)
-          .filter(Boolean);
-        clearTouchSorting();
-        saveProviderOrder(slugs);
-      };
-      document.ontouchcancel = () => {
-        clearTouchSorting();
-        renderProviders(cachedProviders);
-      };
+      // Bound with addEventListener rather than document.ontouchmove: the
+      // property slot only exists when the browser has touch support switched on,
+      // and a touchmove listener on document is passive by default — which would
+      // make preventDefault a no-op and let the page pan out from under the drag.
+      document.addEventListener('touchmove', onProviderTouchMove, { passive: false });
+      document.addEventListener('touchend', onProviderTouchEnd);
+      document.addEventListener('touchcancel', onProviderTouchCancel);
+    }
+
+    function onProviderTouchMove(event) {
+      if (!touchProviderSlug) return;
+      const touch = Array.from(event.touches).find(item => item.identifier === touchIdentifier);
+      if (!touch) return;
+      event.preventDefault();
+      const source = document.querySelector('#providers-list tr[data-provider-slug="' + CSS.escape(touchProviderSlug) + '"]');
+      const target = document.elementFromPoint(touch.clientX, touch.clientY)
+        ?.closest('#providers-list tr[data-provider-slug]');
+      if (!source || !target || source === target) return;
+      const targetRect = target.getBoundingClientRect();
+      const insertBefore = touch.clientY < targetRect.top + targetRect.height / 2;
+      target.parentElement.insertBefore(source, insertBefore ? target : target.nextSibling);
+      target.classList.add('drag-over');
+      requestAnimationFrame(() => target.classList.remove('drag-over'));
+    }
+
+    function onProviderTouchEnd(event) {
+      if (!touchProviderSlug || !Array.from(event.changedTouches).some(item => item.identifier === touchIdentifier)) return;
+      event.preventDefault();
+      const slugs = Array.from(document.querySelectorAll('#providers-list tr[data-provider-slug]'))
+        .map(item => item.dataset.providerSlug)
+        .filter(Boolean);
+      clearTouchSorting();
+      saveProviderOrder(slugs);
+    }
+
+    function onProviderTouchCancel() {
+      clearTouchSorting();
+      renderProviders(cachedProviders);
     }
 
     async function reorderProviders(sourceSlug, targetSlug) {
@@ -1838,10 +1952,60 @@ export function getAdminHtml(): string {
       el.className = 'status-msg show ' + kind;
     }
 
+    // The file chosen through the drop zone. Kept beside the input because a
+    // dropped file cannot be stored in input.files in every browser.
+    let pendingImportFile = null;
+
+    function syncImportPick() {
+      const input = document.getElementById('import-file');
+      const drop = document.getElementById('import-drop');
+      const label = document.getElementById('import-file-name');
+      const button = document.getElementById('import-button');
+      const file = input.files && input.files[0] ? input.files[0] : pendingImportFile;
+      pendingImportFile = file || null;
+      if (file) {
+        label.textContent = file.name + ' · ' + (file.size / 1024 / 1024).toFixed(2) + ' MiB';
+        drop.classList.add('has-file');
+        button.disabled = false;
+      } else {
+        label.textContent = '点击选择 ZIP，或将文件拖到这里';
+        drop.classList.remove('has-file');
+        button.disabled = true;
+      }
+    }
+
+    function bindImportDrop() {
+      const input = document.getElementById('import-file');
+      const drop = document.getElementById('import-drop');
+      input.addEventListener('change', syncImportPick);
+      // The dashed border promises a drop zone, so it has to accept one.
+      drop.addEventListener('dragover', event => {
+        event.preventDefault();
+        drop.classList.add('dragover');
+      });
+      drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+      drop.addEventListener('drop', event => {
+        event.preventDefault();
+        drop.classList.remove('dragover');
+        const dropped = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
+        if (!dropped) return;
+        pendingImportFile = dropped;
+        try {
+          const transfer = new DataTransfer();
+          transfer.items.add(dropped);
+          input.files = transfer.files;
+        } catch {
+          // Older browsers refuse the assignment; the pending file still works.
+        }
+        syncImportPick();
+      });
+      syncImportPick();
+    }
+
     async function doUnifiedImport() {
       const input = document.getElementById('import-file');
       const button = document.getElementById('import-button');
-      const file = input.files && input.files[0];
+      const file = (input.files && input.files[0]) || pendingImportFile;
       if (!file) {
         showImportResult('error', '请先选择统一母包 ZIP', [], '');
         return;
@@ -1878,6 +2042,7 @@ export function getAdminHtml(): string {
           const providers = result.data?.providers || [];
           showImportResult('success', '统一母包导入成功', providers);
           input.value = '';
+          pendingImportFile = null;
           invalidateSecondaryViews();
           await loadProviders({ silent: true });
           return;
@@ -1895,7 +2060,10 @@ export function getAdminHtml(): string {
       } catch (error) {
         showImportResult('error', '导入失败：网络请求未完成', [], '');
       } finally {
-        button.disabled = false;
+        // Re-derive the button state instead of blindly re-enabling it: after a
+        // successful import the picker is empty again and the button must go back
+        // to disabled.
+        syncImportPick();
       }
     }
 
@@ -2208,6 +2376,7 @@ export function getAdminHtml(): string {
       }
     }
 
+    bindImportDrop();
     queueMicrotask(() => checkSession());
   </script>
 </body>
