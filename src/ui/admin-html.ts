@@ -547,7 +547,14 @@ export function getAdminHtml(): string {
       justify-items: start;
     }
 
-    .backup-actions .file-picker { justify-self: stretch; }
+    /* The picker carries its own bottom margin for plain form use; inside this
+       grid that margin would stack on top of the row gap and make the import
+       button sit further from the file row than the other rows sit from each
+       other. */
+    .backup-actions .file-picker {
+      justify-self: stretch;
+      margin-bottom: 0;
+    }
 
     /* Compact variant for single-value popups. */
     .modal-sm {
@@ -816,9 +823,9 @@ export function getAdminHtml(): string {
           </div>
         </div>
         <div class="webdav-actions">
-          <button class="btn btn-primary" onclick="pushWebDAV()">推送到 WebDAV</button>
-          <button class="btn btn-outline" onclick="saveWebDAVConfig()">保存配置</button>
+          <button class="btn btn-primary" onclick="saveWebDAVConfig()">保存配置</button>
           <button class="btn btn-outline" onclick="testWebDAV()">测试连接</button>
+          <button class="btn btn-outline" onclick="pushWebDAV()">推送到 WebDAV</button>
           <button class="btn btn-outline" onclick="pullWebDAV()">从 WebDAV 拉取</button>
         </div>
         <div id="webdav-status" class="status-msg"></div>
@@ -832,7 +839,7 @@ export function getAdminHtml(): string {
         <div class="backup-actions">
           <button class="btn btn-primary" onclick="doUnifiedExport()">导出通用母包</button>
           <input id="import-file" class="file-picker" type="file" accept=".zip,application/zip">
-          <button id="import-button" class="btn btn-outline" onclick="doUnifiedImport()">验证并导入</button>
+          <button id="import-button" class="btn btn-primary" onclick="doUnifiedImport()">验证并导入</button>
         </div>
         <div id="unified-export-status" class="status-msg"></div>
         <div id="import-status" class="status-msg" role="status" aria-live="polite"></div>

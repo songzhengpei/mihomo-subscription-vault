@@ -350,22 +350,35 @@ describe("admin LLM credential UI", () => {
     expect(backup.indexOf('id="webdav-username"')).toBeLessThan(
       backup.indexOf('id="webdav-password"'),
     );
-    // The blue push button leads; the three behind it stay quiet outlines.
+    // 保存配置 leads as the only blue button; the three behind it stay quiet
+    // outlines.
     const webdavActions = backup.slice(
       backup.indexOf('class="webdav-actions"'),
       backup.indexOf('id="webdav-status"'),
     );
-    expect(backup.indexOf("pushWebDAV()")).toBeLessThan(
-      backup.indexOf("saveWebDAVConfig()"),
+    expect(
+      webdavActions.indexOf(
+        'class="btn btn-primary" onclick="saveWebDAVConfig()"',
+      ),
+    ).toBeLessThan(webdavActions.indexOf('class="btn btn-outline"'));
+    expect(backup.indexOf("saveWebDAVConfig()")).toBeLessThan(
+      backup.indexOf("testWebDAV()"),
     );
     expect(webdavActions.match(/btn-primary/g)).toHaveLength(1);
     expect(webdavActions.match(/btn-outline/g)).toHaveLength(3);
     // Export and import stay short: they must never span the whole card.
     expect(html).toContain("justify-items: start;");
     expect(html).not.toContain(".backup-actions > .btn { width: 100%; }");
-    expect(html).toContain(
-      ".backup-actions .file-picker { justify-self: stretch; }",
+    // 验证并导入 is the card's second blue action, so it is not an outline.
+    expect(backup).toContain(
+      'class="btn btn-primary" onclick="doUnifiedImport()"',
     );
+    // The file row carries its own bottom margin for plain form use; inside the
+    // action grid it must not stack on the gap, or the import button ends up
+    // further from the file row than every other row sits from each other.
+    expect(html).toContain(".backup-actions .file-picker {");
+    expect(html).toContain("margin-bottom: 0;");
+    expect(html).toContain("justify-self: stretch;");
     // Phone widths keep the WebDAV button grid even.
     expect(html).toContain(
       ".webdav-actions { display: grid; grid-template-columns: 1fr 1fr; }",
