@@ -80,13 +80,13 @@ describe("admin unified import UI", () => {
     );
     expect(html).toContain("loadHistory({ silent: true })");
     expect(backup.indexOf("WebDAV 同步")).toBeLessThan(
-      backup.indexOf("导出通用母包"),
+      backup.indexOf("统一母包"),
     );
+    // Export and import now share one card, described in one sentence.
+    expect(backup).toContain("导出当前全部订阅的统一母包，或选择 ZIP 导入。");
     expect(backup.indexOf("导出通用母包")).toBeLessThan(
-      backup.indexOf("导入统一母包"),
+      backup.indexOf("验证并导入"),
     );
-    expect(backup).toContain("导出当前全部订阅的统一母包。");
-    expect(backup).toContain("选择并导入统一母包 ZIP。");
   });
 
   it("updates provider views without replacing them with a loading screen", () => {
@@ -243,8 +243,8 @@ describe("admin LLM credential UI", () => {
       html.indexOf('id="tab-history"'),
     );
 
-    // Mirrors the 添加订阅 panel: same collapsible summary + card + form markup.
-    expect(pane).toContain("<summary>添加大模型密钥</summary>");
+    // Mirrors the 添加订阅 panel: same title + card + form markup.
+    expect(pane).toContain('<div class="section-title">添加大模型密钥</div>');
     expect(pane).toContain('class="form-group"');
     expect(pane).toContain('id="llm-add-name"');
     expect(pane).toContain('id="llm-add-slug"');
@@ -261,26 +261,29 @@ describe("admin LLM credential UI", () => {
     expect(pane).not.toContain('id="add-subscription-section"');
   });
 
-  it("keeps every add form collapsed inside its own tab", () => {
+  it("keeps each add form visible inside its own tab", () => {
     const html = getAdminHtml();
     const listPane = html.slice(
       html.indexOf('id="tab-list"'),
       html.indexOf('id="tab-llm"'),
     );
 
-    // The list tab owns its own add panel — it used to sit outside the tab panes
-    // and therefore showed up under 历史版本 and 导入与导出 too.
+    // The list tab owns its own add form — it used to sit outside the tab panes
+    // and therefore showed up under 历史版本 and 导入与导出 too. It stays expanded
+    // (no <details>), so the inputs are one glance away.
     expect(listPane).toContain('id="add-subscription-section"');
-    expect(listPane).toContain("<summary>添加订阅</summary>");
-    expect(listPane).toContain('class="add-panel"');
+    expect(listPane).toContain('<div class="section-title">添加订阅</div>');
     expect(listPane).toContain('id="update-url"');
+    expect(listPane).toContain('id="update-user-agent-select"');
+    expect(listPane).not.toContain("<summary>");
+    expect(listPane).not.toContain("add-panel");
     // Nothing outside the tab panes renders add forms any more.
     const afterTabs = html.slice(html.indexOf('id="tab-backup"'));
     expect(afterTabs).not.toContain('id="add-subscription-section"');
     expect(afterTabs).not.toContain('id="llm-add-panel"');
   });
 
-  it("renders the header as a single-line toolbar", () => {
+  it("centres the header title and subtitle", () => {
     const html = getAdminHtml();
     const header = html.slice(
       html.indexOf("<header>"),
@@ -289,10 +292,13 @@ describe("admin LLM credential UI", () => {
 
     expect(header).toContain('class="topbar-title"');
     expect(header).toContain("退出登录");
-    expect(header).toContain('class="subtitle"');
-    // One row, not a centred stack of three.
-    expect(html).toContain("justify-content: space-between;");
-    expect(html).not.toContain('class="subtitle">Mihomo Subscription Vault — ');
+    // Big centred title over its subtitle, the way the original page looked.
+    expect(header).toContain('class="subtitle">Mihomo Subscription Vault — ');
+    expect(html).toContain("flex-direction: column;");
+    expect(html).toContain(".topbar-logout {");
+    // The logout control is taken out of the centred flow instead of adding a row.
+    expect(html).toContain(".topbar-logout {");
+    expect(html).toContain("position: absolute;");
   });
 
   it("lays the backup tab out in two columns", () => {
@@ -301,6 +307,21 @@ describe("admin LLM credential UI", () => {
     expect(html).toContain(".backup-grid {");
     expect(html).toContain("grid-template-columns: 1.15fr 1fr;");
     expect(html).toContain('class="backup-col"');
+    // Export and import share one card instead of two stacked ones.
+    const backup = html.slice(
+      html.indexOf('id="tab-backup"'),
+      html.indexOf("<!-- Add subscription panel"),
+    );
+    expect(backup.match(/card-title/g)).toHaveLength(2);
+    expect(backup).toContain("统一母包");
+    expect(backup).toContain("doUnifiedExport()");
+    expect(backup).toContain("doUnifiedImport()");
+    expect(backup).toContain('class="backup-actions"');
+    // Phone widths turn the ragged button rows into even full-width grids.
+    expect(html).toContain(
+      ".webdav-actions { display: grid; grid-template-columns: 1fr 1fr; }",
+    );
+    expect(html).toContain(".backup-actions > .btn { width: 100%; }");
   });
 
   it("carries role classes so the mobile card can lay itself out", () => {
@@ -309,14 +330,16 @@ describe("admin LLM credential UI", () => {
     expect(html).toContain(".table-stack .cell-time {");
     expect(html).toContain(".table-stack .cell-meta {");
     expect(html).toContain(".table-stack .cell-actions {");
-    // Name grows, time sits at the right edge, metas share one line.
+    // Name takes the left, the timestamp the right, metas the next line.
     expect(html).toContain(".table-stack .cell-primary {");
     expect(html).toContain("flex: 1 1 auto;");
-    expect(html).toContain(".table-stack .cell-actions {");
+    expect(html).toContain("text-align: right;");
     expect(html).toContain("flex: 1 1 100%;");
-    // Buttons shrink so the action block stops dominating the card.
+    // Actions stack in a single full-width column.
+    expect(html).toContain("flex-direction: column;");
+    expect(html).toContain(".table-stack .cell-actions .btn { width: 100%; }");
     expect(html).toContain(
-      ".table-stack .btn { padding: 5px 9px; font-size: 12px; }",
+      ".table-stack .btn { padding: 6px 9px; font-size: 12px; }",
     );
   });
 

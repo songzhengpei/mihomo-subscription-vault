@@ -38,30 +38,35 @@ export function getAdminHtml(): string {
     }
 
     header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
+      position: relative;
+      text-align: center;
       border-bottom: 1px solid var(--border);
-      padding-bottom: 14px;
+      padding-bottom: 16px;
       margin-bottom: 20px;
     }
 
     .topbar-title {
       display: flex;
-      align-items: baseline;
-      gap: 10px;
-      flex-wrap: wrap;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
     }
 
     h1 {
-      font-size: 20px;
+      font-size: 26px;
       font-weight: 700;
     }
 
     .subtitle {
       color: var(--text-dim);
-      font-size: 13px;
+      font-size: 14px;
+    }
+
+    /* Kept out of the centred flow so the title block stays short. */
+    .topbar-logout {
+      position: absolute;
+      right: 0;
+      top: 0;
     }
 
     /* Auth */
@@ -568,6 +573,30 @@ export function getAdminHtml(): string {
       align-content: start;
     }
 
+    /* WebDAV actions and the unified-archive actions. On a phone both become
+       full-width grids so no button row leaves a ragged empty tail. */
+    .webdav-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .backup-actions {
+      display: grid;
+      gap: 12px;
+    }
+
+    .import-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .import-row .file-picker { flex: 1 1 200px; }
+
     /* Compact variant for single-value popups. */
     .modal-sm {
       max-width: 420px;
@@ -592,29 +621,20 @@ export function getAdminHtml(): string {
     /* Credential plaintext: long tokens have no spaces, so they must be forced
        to wrap or they blow out the modal on narrow screens. user-select: all
        makes a single tap select the whole value on mobile. */
-    /* Column widths: the name column absorbs the slack so the table does not
-       leave a dead zone between the data and the right-aligned actions. */
-    #providers-list th:nth-child(1),
-    #providers-list td:nth-child(1) { width: 72px; }
-    #providers-list th:nth-child(3),
-    #providers-list td:nth-child(3) { width: 96px; }
-    #providers-list th:nth-child(4),
-    #providers-list td:nth-child(4) { width: 168px; }
-    #providers-list th:nth-child(5),
-    #providers-list td:nth-child(5) { width: 64px; }
+    /* Column widths: the data columns shrink to their content so the information
+       stays packed on the left, and the action column absorbs the remaining
+       space with its buttons flush right. Scoped to wide screens so it can never
+       fight the stacked-card rules below on specificity. */
+    @media (min-width: 641px) {
+      #providers-list th:not(:last-child),
+      #providers-list td:not(:last-child),
+      #llm-keys-list th:not(:last-child),
+      #llm-keys-list td:not(:last-child),
+      #history-list th:not(:last-child),
+      #history-list td:not(:last-child) { width: 1%; white-space: nowrap; }
+    }
     #providers-list td:nth-child(3) { color: var(--text-dim); font-size: 13px; }
-    #llm-keys-list th:nth-child(2),
-    #llm-keys-list td:nth-child(2) { width: 120px; }
-    #llm-keys-list th:nth-child(3),
-    #llm-keys-list td:nth-child(3) { width: 150px; }
-    #llm-keys-list th:nth-child(4),
-    #llm-keys-list td:nth-child(4) { width: 168px; }
     #llm-keys-list td:nth-child(2) { color: var(--text-dim); font-size: 13px; }
-    /* width:1% makes the action column shrink to its content, so the slack ends
-       up in the name column instead of as a dead zone before the buttons. */
-    #providers-list th:last-child,
-    #llm-keys-list th:last-child,
-    #history-list th:last-child { width: 1%; }
 
     /* Forms lay their fields out in a row instead of one 1200px-wide input per
        line; they collapse back to a single column on narrow screens. */
@@ -660,14 +680,16 @@ export function getAdminHtml(): string {
          reachable instead of hiding one off-screen. */
       .tabs { flex-wrap: wrap; overflow-x: visible; margin-bottom: 18px; }
       .tab { padding: 9px 12px; font-size: 14px; white-space: nowrap; }
-      /* The project name is noise on a phone; dropping it keeps the toolbar to a
-         single row and stops the logout button from wrapping. */
-      .subtitle { display: none; }
       header .btn { white-space: nowrap; }
       .add-panel > summary { padding: 11px 14px; }
       .add-panel > summary::after { content: none; }
       .backup-grid { grid-template-columns: 1fr; gap: 16px; }
       .backup-col { gap: 16px; }
+      /* Full-width action grids: no ragged rows with empty tails. */
+      .webdav-actions { display: grid; grid-template-columns: 1fr 1fr; }
+      .webdav-actions .btn { width: 100%; white-space: nowrap; font-size: 12px; }
+      .backup-actions > .btn { width: 100%; }
+      .import-row { flex-direction: column; align-items: stretch; }
 
       /* Narrow screens: a six-column table cannot survive 390px — the name
          column collapsed to one character per line and the actions needed
@@ -696,15 +718,16 @@ export function getAdminHtml(): string {
         order: 1;
         flex: 1 1 auto;
         min-width: 0;
-        font-size: 15px;
+        font-size: 14px;
         font-weight: 600;
       }
-      /* Pulls the timestamp to the right edge, filling the space that used to be
-         empty and halving the card height. */
+      /* Grows to fill the rest of the line so the name sits left and the time
+         sits right, which pushes the meta cells onto their own line. */
       .table-stack .cell-time {
         order: 2;
-        flex: 0 0 auto;
-        font-size: 12px;
+        flex: 1 1 auto;
+        text-align: right;
+        font-size: 11.5px;
         color: var(--text-dim);
       }
       .table-stack .cell-meta {
@@ -720,13 +743,15 @@ export function getAdminHtml(): string {
       .table-stack .cell-meta.mono { font-size: 12px; }
       .table-stack .order-cell { display: none; }
       .table-stack .cell-actions { order: 9; flex: 1 1 100%; padding-top: 8px; }
-      /* Buttons wrap into as many lines as they need instead of forcing a
-         horizontal scroll, and shrink so the action block stops dominating. */
+      /* Buttons form a single full-width column: no ragged wrap, and each row is
+         a comfortable tap target. */
       .table-stack .cell-actions .btn-group {
-        flex-wrap: wrap;
-        justify-content: flex-start;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
       }
-      .table-stack .btn { padding: 5px 9px; font-size: 12px; }
+      .table-stack .cell-actions .btn { width: 100%; }
+      .table-stack .btn { padding: 6px 9px; font-size: 12px; }
       .table-stack .cell-actions { text-align: left; }
       #providers-list, #history-list, #llm-keys-list { overflow-x: visible; }
     }
@@ -764,9 +789,9 @@ export function getAdminHtml(): string {
     <header>
       <div class="topbar-title">
         <h1>订阅管理中心</h1>
-        <div class="subtitle">Mihomo Subscription Vault</div>
+        <div class="subtitle">Mihomo Subscription Vault — 私有订阅快照与配置管理</div>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="doLogout()">退出登录</button>
+      <button class="btn btn-outline btn-sm topbar-logout" onclick="doLogout()">退出登录</button>
     </header>
 
     <div class="tabs">
@@ -786,9 +811,9 @@ export function getAdminHtml(): string {
         <div id="providers-list"></div>
       </div>
 
-      <details id="add-subscription-section" class="add-panel">
-        <summary>添加订阅</summary>
+      <div id="add-subscription-section" class="update-section">
         <div class="card">
+          <div class="section-title">添加订阅</div>
           <div class="form-grid">
             <div class="form-group">
               <label>订阅名称</label>
@@ -816,7 +841,7 @@ export function getAdminHtml(): string {
           <button class="btn btn-primary" onclick="doUpdate()">测试并添加</button>
           <div id="update-status" class="status-msg"></div>
         </div>
-      </details>
+      </div>
     </div>
 
     <div id="tab-llm" class="tab-content">
@@ -829,9 +854,9 @@ export function getAdminHtml(): string {
         <div id="llm-keys-list"></div>
       </div>
 
-      <details id="llm-add-panel" class="add-panel">
-        <summary>添加大模型密钥</summary>
+      <div id="llm-add-panel" class="update-section">
         <div class="card">
+          <div class="section-title">添加大模型密钥</div>
           <div class="form-grid">
             <div class="form-group">
               <label>名称</label>
@@ -849,7 +874,7 @@ export function getAdminHtml(): string {
           <button class="btn btn-primary" onclick="saveLlmKey()">保存并添加</button>
           <div id="llm-status" class="status-msg" role="status" aria-live="polite"></div>
         </div>
-      </details>
+      </div>
     </div>
 
     <div id="tab-history" class="tab-content">
@@ -893,7 +918,7 @@ export function getAdminHtml(): string {
             <input id="webdav-remote-path" placeholder="/clash-verge-rev-backup/worker-backup.zip" value="/clash-verge-rev-backup/worker-backup.zip">
           </div>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <div class="webdav-actions">
           <button class="btn btn-outline" onclick="saveWebDAVConfig()">保存配置</button>
           <button class="btn btn-outline" onclick="testWebDAV()">测试连接</button>
           <button class="btn btn-primary" onclick="pushWebDAV()">推送到 WebDAV</button>
@@ -903,20 +928,18 @@ export function getAdminHtml(): string {
       </div>
       <div class="backup-col">
       <div class="card">
-        <div class="card-title" style="margin-bottom:18px">导出通用母包</div>
-        <p style="color:var(--text-dim);font-size:14px;margin-bottom:18px">
-          导出当前全部订阅的统一母包。
+        <div class="card-title" style="margin-bottom:18px">统一母包</div>
+        <p style="color:var(--text-dim);font-size:14px;margin-bottom:14px">
+          导出当前全部订阅的统一母包，或选择 ZIP 导入。
         </p>
-        <button class="btn btn-primary" onclick="doUnifiedExport()">导出通用母包</button>
+        <div class="backup-actions">
+          <button class="btn btn-primary" onclick="doUnifiedExport()">导出通用母包</button>
+          <div class="import-row">
+            <input id="import-file" class="file-picker" type="file" accept=".zip,application/zip">
+            <button id="import-button" class="btn btn-primary" onclick="doUnifiedImport()">验证并导入</button>
+          </div>
+        </div>
         <div id="unified-export-status" class="status-msg"></div>
-      </div>
-      <div class="card">
-        <div class="card-title" style="margin-bottom:18px">导入统一母包</div>
-        <p style="color:var(--text-dim);font-size:14px;margin-bottom:18px">
-          选择并导入统一母包 ZIP。
-        </p>
-        <input id="import-file" class="file-picker" type="file" accept=".zip,application/zip">
-        <button id="import-button" class="btn btn-primary" onclick="doUnifiedImport()">验证并导入</button>
         <div id="import-status" class="status-msg" role="status" aria-live="polite"></div>
       </div>
       </div>
