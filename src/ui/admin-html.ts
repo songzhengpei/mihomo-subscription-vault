@@ -508,55 +508,7 @@ export function getAdminHtml(): string {
       border-bottom: 1px solid var(--border);
     }
 
-    /* Collapsible add panel: kept collapsed so the list owns the first screen
-       instead of pushing a full form below the fold. */
-    .add-panel {
-      margin-top: 20px;
-    }
-
-    .add-panel > summary {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 13px 16px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      list-style: none;
-      user-select: none;
-    }
-
-    .add-panel > summary::-webkit-details-marker { display: none; }
-
-    .add-panel > summary::before {
-      content: '＋';
-      color: var(--primary);
-      font-weight: 700;
-      line-height: 1;
-    }
-
-    .add-panel[open] > summary::before { content: '－'; }
-
-    .add-panel > summary::after {
-      content: '新增后自动生成固定地址';
-      margin-left: auto;
-      color: var(--text-dim);
-      font-size: 12px;
-      font-weight: 400;
-    }
-
-    .add-panel[open] > summary { border-radius: 10px 10px 0 0; }
-
-    .add-panel > .card {
-      border-radius: 0 0 10px 10px;
-      border-top: 0;
-      margin-bottom: 0;
-    }
-
-    /* WebDAV on the left, export/import stacked on the right. */
+    /* WebDAV on the left, local sync on the right. */
     .backup-grid {
       display: grid;
       grid-template-columns: 1.15fr 1fr;
@@ -573,8 +525,8 @@ export function getAdminHtml(): string {
       align-content: start;
     }
 
-    /* WebDAV actions and the unified-archive actions. On a phone both become
-       full-width grids so no button row leaves a ragged empty tail. */
+    /* WebDAV actions and the local-sync actions. On a phone the WebDAV row
+       becomes a full-width grid so it leaves no ragged empty tail. */
     .webdav-actions {
       display: flex;
       gap: 8px;
@@ -583,19 +535,19 @@ export function getAdminHtml(): string {
       margin-bottom: 12px;
     }
 
+    /* Two fields per row: address + remote path, then username + password. */
+    .webdav-fields { grid-template-columns: 1fr 1fr; }
+
+    /* Local sync: one short action per line, stacked in reading order. The
+       buttons keep their natural width (a full-width button would be far too
+       loud here); only the file picker spans the card. */
     .backup-actions {
       display: grid;
       gap: 12px;
+      justify-items: start;
     }
 
-    .import-row {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .import-row .file-picker { flex: 1 1 200px; }
+    .backup-actions .file-picker { justify-self: stretch; }
 
     /* Compact variant for single-value popups. */
     .modal-sm {
@@ -621,17 +573,19 @@ export function getAdminHtml(): string {
     /* Credential plaintext: long tokens have no spaces, so they must be forced
        to wrap or they blow out the modal on narrow screens. user-select: all
        makes a single tap select the whole value on mobile. */
-    /* Column widths: the data columns shrink to their content so the information
-       stays packed on the left, and the action column absorbs the remaining
-       space with its buttons flush right. Scoped to wide screens so it can never
-       fight the stacked-card rules below on specificity. */
+    /* Column widths: only the action column shrinks to its content, so the
+       buttons keep their own tight spacing and stay flush right; the data columns
+       then share every remaining pixel. The row reads edge to edge instead of
+       leaving a dead hole between the last value and the buttons. Scoped to wide
+       screens so it can never fight the narrow-screen rules below on
+       specificity. */
     @media (min-width: 641px) {
-      #providers-list th:not(:last-child),
-      #providers-list td:not(:last-child),
-      #llm-keys-list th:not(:last-child),
-      #llm-keys-list td:not(:last-child),
-      #history-list th:not(:last-child),
-      #history-list td:not(:last-child) { width: 1%; white-space: nowrap; }
+      #providers-list th:last-child,
+      #providers-list td:last-child,
+      #llm-keys-list th:last-child,
+      #llm-keys-list td:last-child,
+      #history-list th:last-child,
+      #history-list td:last-child { width: 1%; white-space: nowrap; }
     }
     #providers-list td:nth-child(3) { color: var(--text-dim); font-size: 13px; }
     #llm-keys-list td:nth-child(2) { color: var(--text-dim); font-size: 13px; }
@@ -662,7 +616,8 @@ export function getAdminHtml(): string {
     @media (max-width: 640px) {
       .container { padding: 24px 20px; }
       .table { font-size: 13px; }
-      .table th, .table td { padding: 8px 8px; }
+      .table th { font-size: 12px; }
+      .table th, .table td { padding: 10px 12px; }
       .btn-group { flex-direction: row; }
       #providers-list .order-cell {
         padding-left: 0;
@@ -681,79 +636,21 @@ export function getAdminHtml(): string {
       .tabs { flex-wrap: wrap; overflow-x: visible; margin-bottom: 18px; }
       .tab { padding: 9px 12px; font-size: 14px; white-space: nowrap; }
       header .btn { white-space: nowrap; }
-      .add-panel > summary { padding: 11px 14px; }
-      .add-panel > summary::after { content: none; }
       .backup-grid { grid-template-columns: 1fr; gap: 16px; }
       .backup-col { gap: 16px; }
-      /* Full-width action grids: no ragged rows with empty tails. */
+      .webdav-fields { grid-template-columns: 1fr; }
+      /* Full-width action grid: no ragged rows with empty tails. */
       .webdav-actions { display: grid; grid-template-columns: 1fr 1fr; }
       .webdav-actions .btn { width: 100%; white-space: nowrap; font-size: 12px; }
-      .backup-actions > .btn { width: 100%; }
-      .import-row { flex-direction: column; align-items: stretch; }
 
-      /* Narrow screens: a six-column table cannot survive 390px — the name
-         column collapsed to one character per line and the actions needed
-         sideways scrolling. Each row becomes a compact card instead: name left,
-         time right on one line, the rest merged into a single meta line, and the
-         buttons on their own line. */
-      .table-stack,
-      .table-stack tbody { display: block; width: auto; }
-      .table-stack thead { display: none; }
-      .table-stack tr {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: baseline;
-        column-gap: 10px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--surface-2);
-        padding: 10px 12px;
-        margin-bottom: 10px;
-      }
-      .table-stack td { display: block; border: 0; padding: 0; width: auto; }
-      /* DOM order is name, slug, time, count, actions. On mobile the time is
-         pulled up next to the name to fill the right edge, the remaining values
-         share one quiet meta line, and the actions close the card. */
-      .table-stack .cell-primary {
-        order: 1;
-        flex: 1 1 auto;
-        min-width: 0;
-        font-size: 14px;
-        font-weight: 600;
-      }
-      /* Grows to fill the rest of the line so the name sits left and the time
-         sits right, which pushes the meta cells onto their own line. */
-      .table-stack .cell-time {
-        order: 2;
-        flex: 1 1 auto;
-        text-align: right;
-        font-size: 11.5px;
-        color: var(--text-dim);
-      }
-      .table-stack .cell-meta {
-        order: 3;
-        flex: 0 0 auto;
-        font-size: 12px;
-        color: var(--text-dim);
-      }
-      .table-stack td[data-label]::before {
-        content: attr(data-label) " ";
-        color: var(--text-dim);
-      }
-      .table-stack .cell-meta.mono { font-size: 12px; }
-      .table-stack .order-cell { display: none; }
-      .table-stack .cell-actions { order: 9; flex: 1 1 100%; padding-top: 8px; }
-      /* Buttons form a single full-width column: no ragged wrap, and each row is
-         a comfortable tap target. */
-      .table-stack .cell-actions .btn-group {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 6px;
-      }
-      .table-stack .cell-actions .btn { width: 100%; }
-      .table-stack .btn { padding: 6px 9px; font-size: 12px; }
-      .table-stack .cell-actions { text-align: left; }
-      #providers-list, #history-list, #llm-keys-list { overflow-x: visible; }
+      /* A phone keeps the real table and scrolls it sideways inside the card.
+         min-width: max-content pins every column to its natural width, so no
+         value is ever squeezed into one character per line and the action
+         buttons stay on a single line instead of wrapping into a tall stack. */
+      #providers-list > table,
+      #history-list > table,
+      #llm-keys-list > table { min-width: max-content; }
+      .table .btn { padding: 6px 9px; font-size: 12px; }
     }
   </style>
 </head>
@@ -900,10 +797,14 @@ export function getAdminHtml(): string {
         <p style="color:var(--text-dim);font-size:14px;margin-bottom:14px">
           推送或恢复 WebDAV 中的统一母包。
         </p>
-        <div class="form-grid">
+        <div class="form-grid webdav-fields">
           <div class="form-group">
             <label>WebDAV 地址</label>
             <input id="webdav-url" placeholder="https://dav.jianguoyun.com/dav/">
+          </div>
+          <div class="form-group">
+            <label>远程路径</label>
+            <input id="webdav-remote-path" placeholder="/clash-verge-rev-backup/worker-backup.zip" value="/clash-verge-rev-backup/worker-backup.zip">
           </div>
           <div class="form-group">
             <label>用户名</label>
@@ -913,31 +814,25 @@ export function getAdminHtml(): string {
             <label>密码</label>
             <input id="webdav-password" type="password" placeholder="应用专用密码">
           </div>
-          <div class="form-group">
-            <label>远程路径</label>
-            <input id="webdav-remote-path" placeholder="/clash-verge-rev-backup/worker-backup.zip" value="/clash-verge-rev-backup/worker-backup.zip">
-          </div>
         </div>
         <div class="webdav-actions">
+          <button class="btn btn-primary" onclick="pushWebDAV()">推送到 WebDAV</button>
           <button class="btn btn-outline" onclick="saveWebDAVConfig()">保存配置</button>
           <button class="btn btn-outline" onclick="testWebDAV()">测试连接</button>
-          <button class="btn btn-primary" onclick="pushWebDAV()">推送到 WebDAV</button>
           <button class="btn btn-outline" onclick="pullWebDAV()">从 WebDAV 拉取</button>
         </div>
         <div id="webdav-status" class="status-msg"></div>
       </div>
       <div class="backup-col">
       <div class="card">
-        <div class="card-title" style="margin-bottom:18px">统一母包</div>
+        <div class="card-title" style="margin-bottom:18px">本地同步</div>
         <p style="color:var(--text-dim);font-size:14px;margin-bottom:14px">
-          导出当前全部订阅的统一母包，或选择 ZIP 导入。
+          导出当前全部订阅的统一母包到本地文件，或选择本地 ZIP 文件导入。
         </p>
         <div class="backup-actions">
           <button class="btn btn-primary" onclick="doUnifiedExport()">导出通用母包</button>
-          <div class="import-row">
-            <input id="import-file" class="file-picker" type="file" accept=".zip,application/zip">
-            <button id="import-button" class="btn btn-primary" onclick="doUnifiedImport()">验证并导入</button>
-          </div>
+          <input id="import-file" class="file-picker" type="file" accept=".zip,application/zip">
+          <button id="import-button" class="btn btn-outline" onclick="doUnifiedImport()">验证并导入</button>
         </div>
         <div id="unified-export-status" class="status-msg"></div>
         <div id="import-status" class="status-msg" role="status" aria-live="polite"></div>
@@ -1221,7 +1116,7 @@ export function getAdminHtml(): string {
         el.innerHTML = '<div class="empty">暂无订阅，请先通过下方「添加订阅」添加一条。</div>';
         return;
       }
-      let html = '<table class="table table-stack"><thead><tr>';
+      let html = '<table class="table"><thead><tr>';
       html += '<th class="order-cell">顺序</th><th>名称</th><th>Slug</th><th>更新时间</th><th>节点</th><th>操作</th>';
       html += '</tr></thead><tbody>';
       for (let index = 0; index < providers.length; index++) {
@@ -1229,11 +1124,11 @@ export function getAdminHtml(): string {
         const ver = p.latestVersion;
         html += '<tr data-provider-slug="' + esc(p.slug) + '">';
         html += '<td class="order-cell"><span class="drag-handle" title="拖动排序" aria-label="拖动排序">⋮⋮</span><span class="order-number">' + (index + 1) + '</span></td>';
-        html += '<td class="cell-primary">' + esc(p.name || p.slug) + '</td>';
-        html += '<td class="mono cell-meta">' + esc(p.slug) + '</td>';
-        html += '<td class="cell-time">' + (ver ? new Date(ver.updatedAt).toLocaleString() : '-') + '</td>';
-        html += '<td class="cell-meta" data-label="节点">' + p.nodeCount + '</td>';
-        html += '<td class="cell-actions"><div class="btn-group">';
+        html += '<td>' + esc(p.name || p.slug) + '</td>';
+        html += '<td class="mono">' + esc(p.slug) + '</td>';
+        html += '<td>' + (ver ? new Date(ver.updatedAt).toLocaleString() : '-') + '</td>';
+        html += '<td>' + p.nodeCount + '</td>';
+        html += '<td><div class="btn-group">';
         // The full config link is the everyday action, so it is the only primary
         // button in the row; everything else stays visually quiet.
         html += '<button class="btn btn-primary btn-sm" title="复制完整配置链接（Clash / Shadowrocket 通用配置）" onclick="copyConfigLink(\\'' + esc(p.slug) + '\\')">复制完整配置</button>';
@@ -1690,21 +1585,21 @@ export function getAdminHtml(): string {
       entries.sort((a, b) => new Date(b.version.createdAt) - new Date(a.version.createdAt));
 
       const showSlugCol = !slug;
-      let html = '<table class="table table-stack"><thead><tr>';
+      let html = '<table class="table"><thead><tr>';
       if (showSlugCol) html += '<th>订阅</th>';
       html += '<th>时间</th><th>节点</th><th>SHA-256</th><th>大小</th><th>来源</th><th>状态</th><th>操作</th>';
       html += '</tr></thead><tbody>';
       for (const e of entries) {
         const v = e.version;
         html += '<tr data-history-slug="' + esc(e.slug) + '" data-history-version="' + esc(v.versionId) + '">';
-        if (showSlugCol) html += '<td class="mono cell-primary">' + esc(e.slug) + '</td>';
-        html += '<td' + (showSlugCol ? ' class="cell-time"' : ' class="cell-primary"') + '>' + new Date(v.createdAt).toLocaleString() + '</td>';
-        html += '<td class="cell-meta" data-label="节点">' + v.nodeCount + '</td>';
-        html += '<td class="mono cell-meta" data-label="SHA-256">' + esc(v.sha256Prefix) + '</td>';
-        html += '<td class="cell-meta" data-label="大小">' + (v.contentLength / 1024).toFixed(1) + ' KB</td>';
-        html += '<td class="mono cell-meta" data-label="来源">' + esc(v.sourceHost) + '</td>';
+        if (showSlugCol) html += '<td class="mono">' + esc(e.slug) + '</td>';
+        html += '<td>' + new Date(v.createdAt).toLocaleString() + '</td>';
+        html += '<td>' + v.nodeCount + '</td>';
+        html += '<td class="mono">' + esc(v.sha256Prefix) + '</td>';
+        html += '<td>' + (v.contentLength / 1024).toFixed(1) + ' KB</td>';
+        html += '<td class="mono">' + esc(v.sourceHost) + '</td>';
         html += '<td>' + (v.isCurrent ? '<span class="badge badge-current">当前</span>' : '') + '</td>';
-        html += '<td class="cell-actions"><div class="btn-group">';
+        html += '<td><div class="btn-group">';
         html += '<button class="btn btn-outline btn-sm" onclick="showMeta(\\'' + esc(e.slug) + '\\', \\'' + esc(v.versionId) + '\\')">元数据</button>';
         if (!v.isCurrent) {
           html += '<button class="btn btn-outline btn-sm" onclick="doRollback(\\'' + esc(e.slug) + '\\', \\'' + esc(v.versionId) + '\\')">回滚</button>';
@@ -2068,17 +1963,17 @@ export function getAdminHtml(): string {
         el.innerHTML = '<div class="empty">暂无大模型密钥，请在下方「添加大模型密钥」中添加一条。</div>';
         return;
       }
-      let html = '<table class="table table-stack"><thead><tr>';
+      let html = '<table class="table"><thead><tr>';
       html += '<th>名称</th><th>Slug</th><th>密钥</th><th>更新时间</th><th>操作</th>';
       html += '</tr></thead><tbody>';
       for (let index = 0; index < keys.length; index++) {
         const item = keys[index];
         html += '<tr data-llm-slug="' + esc(item.slug) + '">';
-        html += '<td class="cell-primary">' + esc(item.name) + '</td>';
-        html += '<td class="mono cell-meta">' + esc(item.slug) + '</td>';
-        html += '<td class="mono cell-meta" data-label="密钥">' + maskedLlmHint(item) + '</td>';
-        html += '<td class="cell-time">' + (item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-') + '</td>';
-        html += '<td class="cell-actions"><div class="btn-group">';
+        html += '<td>' + esc(item.name) + '</td>';
+        html += '<td class="mono">' + esc(item.slug) + '</td>';
+        html += '<td class="mono">' + maskedLlmHint(item) + '</td>';
+        html += '<td>' + (item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '-') + '</td>';
+        html += '<td><div class="btn-group">';
         html += '<button class="btn btn-primary btn-sm" onclick="openLlmView(\\'' + esc(item.slug) + '\\')">查看/复制</button>';
         html += '<button class="btn btn-outline btn-sm" onclick="openLlmModal(\\'' + esc(item.slug) + '\\')">编辑</button>';
         html += '<button class="btn btn-outline btn-sm" onclick="removeLlmKey(\\'' + esc(item.slug) + '\\')">删除</button>';

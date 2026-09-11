@@ -80,10 +80,12 @@ describe("admin unified import UI", () => {
     );
     expect(html).toContain("loadHistory({ silent: true })");
     expect(backup.indexOf("WebDAV 同步")).toBeLessThan(
-      backup.indexOf("统一母包"),
+      backup.indexOf("本地同步"),
     );
     // Export and import now share one card, described in one sentence.
-    expect(backup).toContain("导出当前全部订阅的统一母包，或选择 ZIP 导入。");
+    expect(backup).toContain(
+      "导出当前全部订阅的统一母包到本地文件，或选择本地 ZIP 文件导入。",
+    );
     expect(backup.indexOf("导出通用母包")).toBeLessThan(
       backup.indexOf("验证并导入"),
     );
@@ -162,21 +164,38 @@ describe("admin unified import UI", () => {
     expect(keys.match(/btn-primary/g)).toHaveLength(1);
   });
 
-  it("stacks list rows on narrow screens instead of squeezing the table", () => {
+  it("scrolls wide tables sideways on narrow screens instead of squeezing them", () => {
     const html = getAdminHtml();
 
-    expect(html).toContain('class="table table-stack"');
-    expect(html).toContain(".table-stack thead { display: none; }");
-    expect(html).toContain(".table-stack .cell-primary {");
-    expect(html).toContain('content: attr(data-label) " "');
-    expect(html).toContain(".table-stack .cell-actions .btn-group {");
-    // The name cell must never collapse to one character per line again.
-    expect(html).toContain('class="cell-primary"');
+    // Phone widths keep the real table and scroll it: no synthetic labels, no
+    // card stacking, and no squeezing of the name column.
+    expect(html).toContain("#providers-list > table,");
+    expect(html).toContain("#history-list > table,");
+    expect(html).toContain(
+      "#llm-keys-list > table { min-width: max-content; }",
+    );
+    expect(html).toContain(
+      "#providers-list, #history-list { overflow-x: auto; }",
+    );
     // Fields share a row instead of one full-width input per line.
     expect(html).toContain(".form-grid {");
     expect(html).toContain(
       "grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))",
     );
+  });
+
+  it("gives the leftover table width to the data columns, not the buttons", () => {
+    const html = getAdminHtml();
+    const desktop = html.slice(
+      html.indexOf("@media (min-width: 641px)"),
+      html.indexOf("/* Forms lay their fields"),
+    );
+
+    // Only the action column shrinks to its content, so the buttons keep their
+    // own spacing while every data column shares the remaining width.
+    expect(desktop).toContain("td:last-child");
+    expect(desktop).toContain("{ width: 1%; white-space: nowrap; }");
+    expect(desktop).not.toContain("td:not(:last-child)");
   });
 
   it("uses the shared User-Agent presets without exposing slug in edit", () => {
@@ -307,40 +326,61 @@ describe("admin LLM credential UI", () => {
     expect(html).toContain(".backup-grid {");
     expect(html).toContain("grid-template-columns: 1.15fr 1fr;");
     expect(html).toContain('class="backup-col"');
-    // Export and import share one card instead of two stacked ones.
+    // Local export and import share one card instead of two stacked ones.
     const backup = html.slice(
       html.indexOf('id="tab-backup"'),
       html.indexOf("<!-- Add subscription panel"),
     );
     expect(backup.match(/card-title/g)).toHaveLength(2);
-    expect(backup).toContain("统一母包");
+    expect(backup).toContain("本地同步");
     expect(backup).toContain("doUnifiedExport()");
     expect(backup).toContain("doUnifiedImport()");
     expect(backup).toContain('class="backup-actions"');
-    // Phone widths turn the ragged button rows into even full-width grids.
+    // Address + remote path on the first row, username + password on the second.
+    expect(backup).toContain('class="form-grid webdav-fields"');
+    expect(html).toContain(
+      ".webdav-fields { grid-template-columns: 1fr 1fr; }",
+    );
+    expect(backup.indexOf('id="webdav-url"')).toBeLessThan(
+      backup.indexOf('id="webdav-remote-path"'),
+    );
+    expect(backup.indexOf('id="webdav-remote-path"')).toBeLessThan(
+      backup.indexOf('id="webdav-username"'),
+    );
+    expect(backup.indexOf('id="webdav-username"')).toBeLessThan(
+      backup.indexOf('id="webdav-password"'),
+    );
+    // The blue push button leads; the three behind it stay quiet outlines.
+    const webdavActions = backup.slice(
+      backup.indexOf('class="webdav-actions"'),
+      backup.indexOf('id="webdav-status"'),
+    );
+    expect(backup.indexOf("pushWebDAV()")).toBeLessThan(
+      backup.indexOf("saveWebDAVConfig()"),
+    );
+    expect(webdavActions.match(/btn-primary/g)).toHaveLength(1);
+    expect(webdavActions.match(/btn-outline/g)).toHaveLength(3);
+    // Export and import stay short: they must never span the whole card.
+    expect(html).toContain("justify-items: start;");
+    expect(html).not.toContain(".backup-actions > .btn { width: 100%; }");
+    expect(html).toContain(
+      ".backup-actions .file-picker { justify-self: stretch; }",
+    );
+    // Phone widths keep the WebDAV button grid even.
     expect(html).toContain(
       ".webdav-actions { display: grid; grid-template-columns: 1fr 1fr; }",
     );
-    expect(html).toContain(".backup-actions > .btn { width: 100%; }");
   });
 
-  it("carries role classes so the mobile card can lay itself out", () => {
+  it("keeps the phone lists as scrolling tables, not cards", () => {
     const html = getAdminHtml();
 
-    expect(html).toContain(".table-stack .cell-time {");
-    expect(html).toContain(".table-stack .cell-meta {");
-    expect(html).toContain(".table-stack .cell-actions {");
-    // Name takes the left, the timestamp the right, metas the next line.
-    expect(html).toContain(".table-stack .cell-primary {");
-    expect(html).toContain("flex: 1 1 auto;");
-    expect(html).toContain("text-align: right;");
-    expect(html).toContain("flex: 1 1 100%;");
-    // Actions stack in a single full-width column.
-    expect(html).toContain("flex-direction: column;");
-    expect(html).toContain(".table-stack .cell-actions .btn { width: 100%; }");
-    expect(html).toContain(
-      ".table-stack .btn { padding: 6px 9px; font-size: 12px; }",
-    );
+    // The stacked-card experiment is gone: no role classes, no synthetic labels.
+    expect(html).not.toContain("table-stack");
+    expect(html).not.toContain("data-label");
+    expect(html).not.toContain("cell-primary");
+    expect(html).not.toContain(".cell-actions");
+    expect(html).toContain('class="table"');
   });
 
   it("mirrors the subscription table's mobile horizontal scroll", () => {

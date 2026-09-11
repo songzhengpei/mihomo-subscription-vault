@@ -101,7 +101,7 @@ const FIXTURE = `
       }
       var pre = document.createElement('pre');
       pre.style.cssText = 'position:fixed;left:0;top:0;z-index:99999;background:#fff;color:#000;font:12px/1.5 monospace;margin:0;padding:4px;max-height:100%;overflow:auto;border:1px solid #000';
-      var probes = ['.container', 'h1', '.subtitle', '.tabs', '.card', '#providers-list', '#llm-keys-list', '.table-stack tr'];
+      var probes = ['.container', 'h1', '.subtitle', '.tabs', '.card', '#providers-list', '#llm-keys-list', '#providers-list tbody tr'];
       for (var p = 0; p < probes.length; p++) {
         var node = document.querySelector(probes[p]);
         if (!node) continue;
