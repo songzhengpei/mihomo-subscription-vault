@@ -993,6 +993,44 @@ describe("listVersions with mixed formats", () => {
     expect(items.length).toBe(1);
     expect(items[0]!.versionId).toBe("v-good");
   });
+
+  it("reads version metadata concurrently instead of serialising round trips", async () => {
+    const slug = "parallel-hist";
+    const versionIds = ["v1", "v2", "v3", "v4", "v5", "v6"];
+    for (const id of versionIds) {
+      await writeLegacyVersionMeta(mockBucket, slug, id, {
+        versionId: id,
+        createdAt: "2025-06-01T00:00:00Z",
+        nodeCount: 1,
+        sha256: "abcdef0123456789",
+        contentLength: 100,
+        sourceHost: "example.com",
+      });
+    }
+
+    // A sequential loop can never have more than one read in flight; the
+    // optimised path issues them in parallel.
+    const api = mockBucket as unknown as {
+      get(key: string): Promise<unknown>;
+    };
+    const originalGet = api.get.bind(api);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    api.get = async (key: string) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      try {
+        return await originalGet(key);
+      } finally {
+        inFlight--;
+      }
+    };
+
+    const items = await listVersions(mockBucket as unknown as R2Bucket, slug);
+
+    expect(items.length).toBe(versionIds.length);
+    expect(maxInFlight).toBeGreaterThan(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

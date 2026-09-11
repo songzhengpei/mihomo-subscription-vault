@@ -322,22 +322,31 @@ async function objectExists(bucket: R2Bucket, key: string): Promise<boolean> {
   return (await bucket.get(key)) !== null;
 }
 
-export async function listLlmSlugs(bucket: R2Bucket): Promise<string[]> {
+/**
+ * Single listing pass over the `llm/` prefix. Returns the slugs **and** every
+ * object key, so callers can tell whether a ciphertext exists without issuing a
+ * separate HEAD per credential.
+ */
+async function listLlmObjects(
+  bucket: R2Bucket,
+): Promise<{ slugs: string[]; keys: Set<string> }> {
   const slugs = new Set<string>();
+  const keys = new Set<string>();
   let cursor: string | undefined;
   do {
-    const result = await bucket.list({
-      prefix: LLM_PREFIX,
-      delimiter: "/",
-      cursor,
-    });
-    for (const prefix of result.delimitedPrefixes) {
-      const match = prefix.match(/^llm\/([^/]+)\/$/);
+    const result = await bucket.list({ prefix: LLM_PREFIX, cursor });
+    for (const object of result.objects) {
+      keys.add(object.key);
+      const match = object.key.match(/^llm\/([^/]+)\//);
       if (match && validateSlug(match[1]!)) slugs.add(match[1]!);
     }
     cursor = result.truncated ? result.cursor : undefined;
   } while (cursor);
-  return [...slugs].sort();
+  return { slugs: [...slugs].sort(), keys };
+}
+
+export async function listLlmSlugs(bucket: R2Bucket): Promise<string[]> {
+  return (await listLlmObjects(bucket)).slugs;
 }
 
 // ---------------------------------------------------------------------------
@@ -410,7 +419,8 @@ export async function createLlmKey(
 }
 
 export async function listLlmKeys(bucket: R2Bucket): Promise<LlmKeyListItem[]> {
-  const slugs = await listLlmSlugs(bucket);
+  // One list pass replaces a HEAD request per credential.
+  const { slugs, keys } = await listLlmObjects(bucket);
   const items = await Promise.all(
     slugs.map(async (slug): Promise<LlmKeyListItem | null> => {
       const record = await readObject(bucket, llmMetaKey(slug));
@@ -425,7 +435,7 @@ export async function listLlmKeys(bucket: R2Bucket): Promise<LlmKeyListItem[]> {
         models: meta.models,
         tags: meta.tags,
         hint: meta.hint,
-        secretPresent: await objectExists(bucket, meta.secret.key),
+        secretPresent: keys.has(meta.secret.key),
         createdAt: meta.createdAt,
         updatedAt: meta.updatedAt,
       };
@@ -555,20 +565,28 @@ export async function revealLlmKey(
   slug: string,
 ): Promise<{ meta: LlmKeyMeta; apiKey: string }> {
   const secret = requireSecret(instanceSecret);
-  const detail = await getLlmKey(bucket, slug);
-  if (!detail) {
+  if (!validateSlug(slug)) throw invalidSlug();
+  // Single pass: read the meta and the ciphertext once each, then verify and
+  // decrypt from the very same bytes. (getLlmKey() would read the ciphertext a
+  // second time just to hash it.)
+  const metaRecord = await readObject(bucket, llmMetaKey(slug));
+  if (!metaRecord) {
     throw new LlmKeyError("LLM_KEY_NOT_FOUND", "凭据不存在");
   }
-  if (detail.integrity !== "ok") {
+  const meta = parseMeta(metaRecord.text);
+  if (!meta) {
+    throw new LlmKeyError("LLM_KEY_CORRUPTED", "凭据元数据已损坏");
+  }
+  const record = await readObject(bucket, meta.secret.key);
+  if (!record) {
+    throw new LlmKeyError("LLM_KEY_CORRUPTED", "凭据密文缺失");
+  }
+  if ((await sha256HexText(record.text)) !== meta.secret.sha256) {
     // Fail closed: never return a stale or unverifiable key.
     throw new LlmKeyError(
       "LLM_KEY_CORRUPTED",
       "凭据完整性校验失败，请重新保存该凭据",
     );
-  }
-  const record = await readObject(bucket, detail.meta.secret.key);
-  if (!record) {
-    throw new LlmKeyError("LLM_KEY_CORRUPTED", "凭据密文缺失");
   }
   let envelope: unknown;
   try {
@@ -578,7 +596,7 @@ export async function revealLlmKey(
   }
   try {
     const plaintext = await decryptLlmSecret(envelope, secret);
-    return { meta: detail.meta, apiKey: plaintext.apiKey };
+    return { meta, apiKey: plaintext.apiKey };
   } catch {
     throw new LlmKeyError(
       "LLM_KEY_CORRUPTED",

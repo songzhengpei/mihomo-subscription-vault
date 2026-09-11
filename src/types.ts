@@ -84,6 +84,15 @@ export interface ProviderListItem {
   sourceHost: string;
 }
 
+/**
+ * Provider list projection that also carries its stored source settings, so the
+ * admin list can be assembled without a second R2 pass per provider.
+ */
+export interface ProviderListEntry extends ProviderListItem {
+  sourceUrl: string;
+  userAgent: string;
+}
+
 export interface ProviderOrderDocument {
   schemaVersion: 1;
   slugs: string[];

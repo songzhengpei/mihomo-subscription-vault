@@ -459,7 +459,9 @@ export async function handleApi(
       return errorResponse("INVALID_SLUG", "Slug 格式无效");
     }
 
-    await storage.pruneProviderVersions(env.SUBSCRIPTION_BUCKET, slug, 3);
+    // Read-only endpoint: pruning happens on publish
+    // (tryPruneProviderVersions), so it must not run here — it doubled the
+    // list work and turned a GET into a write.
     const versions = await storage.listVersions(env.SUBSCRIPTION_BUCKET, slug);
     return json({ ok: true, data: versions });
   }
@@ -555,16 +557,7 @@ export async function handleApi(
     }
 
     const providers = await storage.getAllProviderMeta(env.SUBSCRIPTION_BUCKET);
-    const enriched = await Promise.all(
-      providers.map(async (p) => {
-        const settings = await storage.getProviderSourceSettings(
-          env.SUBSCRIPTION_BUCKET,
-          p.slug,
-        );
-        return { ...p, ...settings };
-      }),
-    );
-    return json({ ok: true, data: enriched });
+    return json({ ok: true, data: providers });
   }
 
   // GET /api/providers/:slug/links — get download URLs for a provider

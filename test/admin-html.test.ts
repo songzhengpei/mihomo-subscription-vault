@@ -298,6 +298,59 @@ describe("admin LLM credential UI", () => {
     expect(html).not.toContain("copyLlmKey");
   });
 
+  it("shows the shell at once and prefetches every tab", () => {
+    const html = getAdminHtml();
+    const check = html.slice(
+      html.indexOf("async function checkSession"),
+      html.indexOf("async function doLogout"),
+    );
+
+    // The shell is rendered before the session check is awaited, so a refresh
+    // never stalls on the login form.
+    expect(check.indexOf("showMainScreen()")).toBeLessThan(
+      check.indexOf("await fetch('/api/auth/session'"),
+    );
+    expect(check).toContain("showLoadingPlaceholders()");
+    expect(check).toContain("await loadAllViews()");
+
+    // One up-front pass fills every tab so switching is instant.
+    const all = html.slice(
+      html.indexOf("async function loadAllViews"),
+      html.indexOf("async function checkSession"),
+    );
+    expect(all).toContain("loadProviders()");
+    expect(all).toContain("loadLlmKeys({ silent: true })");
+    expect(all).toContain("loadHistory({ silent: true })");
+    expect(all).toContain("loadWebDAVConfig()");
+    expect(html).toContain("function showLoadingPlaceholders()");
+    expect(html).toContain("加载中...");
+  });
+
+  it("reflects credential mutations locally instead of refetching", () => {
+    const html = getAdminHtml();
+
+    expect(html).toContain("function upsertLlmKeyLocal");
+    expect(html).toContain("function removeLlmKeyLocal");
+
+    const add = html.slice(
+      html.indexOf("async function saveLlmKey"),
+      html.indexOf("async function saveLlmEdit"),
+    );
+    expect(add).toContain("upsertLlmKeyLocal");
+    expect(add).not.toContain("loadLlmKeys({ silent: true })");
+
+    const edit = html.slice(
+      html.indexOf("async function saveLlmEdit"),
+      html.indexOf("// --- View a credential ---"),
+    );
+    expect(edit).toContain("upsertLlmKeyLocal");
+    expect(edit).not.toContain("loadLlmKeys({ silent: true })");
+
+    const remove = html.slice(html.indexOf("async function removeLlmKey"));
+    expect(remove).toContain("removeLlmKeyLocal");
+    expect(remove).not.toContain("loadLlmKeys({ silent: true })");
+  });
+
   it("titles the viewer with the credential name", () => {
     const html = getAdminHtml();
     const start = html.indexOf("async function openLlmView");

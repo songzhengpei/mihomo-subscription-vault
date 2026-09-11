@@ -864,7 +864,7 @@ export function getAdminHtml(): string {
         }
         passwordInput.value = '';
         showMainScreen();
-        await loadProviders();
+        await loadAllViews();
       } catch {
         error.textContent = '无法连接到服务，请检查网络后重试';
       } finally {
@@ -873,7 +873,43 @@ export function getAdminHtml(): string {
       }
     }
 
+    // Placeholders so a panel never looks broken while its data is in flight.
+    function showLoadingPlaceholders() {
+      const panels = [
+        ['providers-list', providersLoaded],
+        ['llm-keys-list', llmLoaded],
+        ['history-list', historyLoaded],
+      ];
+      for (let index = 0; index < panels.length; index++) {
+        const el = document.getElementById(panels[index][0]);
+        if (el && !panels[index][1] && el.innerHTML === '') {
+          el.innerHTML = '<div class="empty">加载中...</div>';
+        }
+      }
+    }
+
+    // Everything the tabs need, fetched once up front. Providers and
+    // credentials are independent so they run together; history needs the
+    // provider list, so it fills in right after — usually before the user
+    // clicks that tab. Switching tabs then renders from memory.
+    async function loadAllViews() {
+      await Promise.all([
+        loadProviders().catch(() => {}),
+        loadLlmKeys({ silent: true }).catch(() => {}),
+      ]);
+      loadHistory({ silent: true }).catch(() => {});
+      webdavLoaded = true;
+      loadWebDAVConfig();
+    }
+
     async function checkSession() {
+      // The /admin page is public HTML that carries no data, so the shell is
+      // shown at once: the layout and its loading placeholders appear
+      // immediately instead of the user staring at the login form while the
+      // session check and the first fetch complete. A failed check still drops
+      // back to the login form.
+      showMainScreen();
+      showLoadingPlaceholders();
       try {
         const response = await fetch('/api/auth/session', {
           credentials: 'same-origin',
@@ -881,8 +917,7 @@ export function getAdminHtml(): string {
         });
         const result = await response.json();
         if (response.ok && result?.data?.authenticated) {
-          showMainScreen();
-          await loadProviders();
+          await loadAllViews();
           return;
         }
       } catch { /* Show the login form below. */ }
@@ -1742,6 +1777,35 @@ export function getAdminHtml(): string {
       showStatus(document.getElementById('llm-status'), ok, msg);
     }
 
+    // Mutations are reflected locally instead of refetching the whole list, so
+    // adding/editing/deleting shows up on the same tick as the response.
+    function upsertLlmKeyLocal(entry) {
+      const existing = llmKeys.filter((item) => item.slug === entry.slug)[0];
+      const merged = {
+        slug: entry.slug,
+        name: entry.name,
+        provider: '',
+        baseUrl: '',
+        models: [],
+        tags: [],
+        hint: { last4: '', length: 0 },
+        secretPresent: true,
+        createdAt: entry.updatedAt,
+        ...(existing || {}),
+        ...entry,
+      };
+      llmKeys = [merged].concat(
+        llmKeys.filter((item) => item.slug !== entry.slug),
+      );
+      llmLoaded = true;
+      renderLlmKeys(llmKeys);
+    }
+
+    function removeLlmKeyLocal(slug) {
+      llmKeys = llmKeys.filter((item) => item.slug !== slug);
+      renderLlmKeys(llmKeys);
+    }
+
     function maskedLlmHint(item) {
       if (!item.secretPresent) return '密文缺失';
       const hint = item.hint || {};
@@ -1846,7 +1910,13 @@ export function getAdminHtml(): string {
         document.getElementById('llm-add-name').value = '';
         document.getElementById('llm-add-slug').value = '';
         document.getElementById('llm-add-key').value = '';
-        await loadLlmKeys({ silent: true });
+        upsertLlmKeyLocal({
+          slug: slug,
+          name: name,
+          hint: { last4: apiKey.slice(-4), length: apiKey.length },
+          secretPresent: true,
+          updatedAt: new Date().toISOString(),
+        });
         showStatus(status, true, '已添加：' + name);
       } catch (error) {
         showStatus(status, false, error && error.message ? error.message : '保存失败');
@@ -1863,10 +1933,11 @@ export function getAdminHtml(): string {
         return;
       }
       showStatus(status, true, '正在保存...');
+      const editingSlug = llmEditingSlug;
       try {
         const payload = { name: name };
         if (apiKey) payload.apiKey = apiKey;
-        const result = await api('/api/llm/keys/' + encodeURIComponent(llmEditingSlug), {
+        const result = await api('/api/llm/keys/' + encodeURIComponent(editingSlug), {
           method: 'PUT',
           body: JSON.stringify(payload),
         });
@@ -1875,7 +1946,16 @@ export function getAdminHtml(): string {
           return;
         }
         closeLlmModal();
-        await loadLlmKeys({ silent: true });
+        const entry = {
+          slug: editingSlug,
+          name: name,
+          updatedAt: new Date().toISOString(),
+        };
+        if (apiKey) {
+          entry.hint = { last4: apiKey.slice(-4), length: apiKey.length };
+          entry.secretPresent = true;
+        }
+        upsertLlmKeyLocal(entry);
         setLlmStatus(true, '已更新：' + name);
       } catch (error) {
         showStatus(status, false, error && error.message ? error.message : '保存失败');
@@ -1960,7 +2040,7 @@ export function getAdminHtml(): string {
           setLlmStatus(false, result.error && result.error.message ? result.error.message : '删除失败');
           return;
         }
-        await loadLlmKeys({ silent: true });
+        removeLlmKeyLocal(slug);
         setLlmStatus(true, '已删除');
       } catch (error) {
         setLlmStatus(false, error && error.message ? error.message : '删除失败');

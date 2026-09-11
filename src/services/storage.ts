@@ -3,6 +3,7 @@ import type {
   LatestJson,
   ProviderMeta,
   ProviderListItem,
+  ProviderListEntry,
   WebDAVConfig,
   HistoryItem,
   VersionArtifact,
@@ -855,13 +856,46 @@ export async function deleteStagingEntry(
   return { deleted };
 }
 
+/**
+ * Bounded-concurrency map. R2 round trips dominate these code paths, so running
+ * them in parallel is the difference between one and N sequential round trips.
+ * The limit keeps a long history from opening hundreds of subrequests at once.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  const workers = Array.from({ length: workerCount }, async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= items.length) return;
+      results[index] = await fn(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export async function listVersions(
   bucket: R2Bucket,
   slug: string,
 ): Promise<HistoryItem[]> {
-  const latest = await getLatest(bucket, slug);
-  const latestVersionId = latest?.versionId;
-  const items: HistoryItem[] = [];
+  // Only the pointer id is needed here; reading the raw pointer avoids the
+  // extra version-meta read that getLatest() performs for V1 pointers.
+  const stored = await readStoredLatestPointer(bucket, slug);
+  const latestVersionId = stored?.pointer.versionId;
+
+  // Collect the unique metadata objects for every page first, then read them in
+  // parallel. The previous sequential loop cost one R2 round trip per version.
+  const candidates: Array<{
+    key: string;
+    versionId: string;
+    isNewFormat: boolean;
+  }> = [];
   const seenVersionIds = new Set<string>();
   let cursor: string | undefined;
 
@@ -871,39 +905,47 @@ export async function listVersions(
       cursor,
     });
     for (const obj of result.objects) {
-      try {
-        const parsed = parseVersionObjectKey(obj.key, slug);
-        if (!parsed) continue;
-        if (seenVersionIds.has(parsed.versionId)) continue;
+      const parsed = parseVersionObjectKey(obj.key, slug);
+      if (!parsed || seenVersionIds.has(parsed.versionId)) continue;
+      seenVersionIds.add(parsed.versionId);
+      candidates.push({
+        key: obj.key,
+        versionId: parsed.versionId,
+        isNewFormat: parsed.isNewFormat,
+      });
+    }
+    cursor = result.truncated ? result.cursor : undefined;
+  } while (cursor);
 
-        const fetched = await bucket.get(obj.key);
-        if (!fetched) continue;
+  const resolved = await mapWithConcurrency(
+    candidates,
+    8,
+    async (candidate): Promise<HistoryItem | null> => {
+      try {
+        const fetched = await bucket.get(candidate.key);
+        if (!fetched) return null;
         const rawText = await fetched.text();
         let raw: Record<string, unknown>;
         try {
           raw = JSON.parse(rawText) as Record<string, unknown>;
         } catch {
-          continue;
+          return null;
         }
-
-        const item = parsed.isNewFormat
+        return candidate.isNewFormat
           ? buildHistoryItemFromV1Meta(raw, latestVersionId)
           : buildHistoryItemFromLegacyMeta(raw, latestVersionId);
-
-        if (item) {
-          seenVersionIds.add(parsed.versionId);
-          items.push(item);
-        }
       } catch {
         // Skip corrupted/malformed version metadata
+        return null;
       }
-    }
-    cursor = result.truncated ? result.cursor : undefined;
-  } while (cursor);
-
-  return items.sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    },
   );
+
+  return resolved
+    .filter((item): item is HistoryItem => item !== null)
+    .sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
 }
 
 /** Parse R2 key to determine new vs legacy format. Returns null for non-metadata keys. */
@@ -975,42 +1017,101 @@ function buildHistoryItemFromLegacyMeta(
   };
 }
 
+async function readLegacyProviderMeta(
+  bucket: R2Bucket,
+  slug: string,
+  versionId: string,
+): Promise<ProviderMeta | null> {
+  const obj = await bucket.get(legacyVersionJsonPath(slug, versionId));
+  if (!obj) return null;
+  try {
+    const raw = (await obj.json()) as Record<string, unknown>;
+    return isValidLegacyMeta(raw) ? (raw as unknown as ProviderMeta) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One list entry per provider with the fewest R2 round trips possible.
+ *
+ * The naive path (getLatest + getProviderMeta + getProviderSourceSettings) reads
+ * the same version meta up to four times per provider. Here the pointer, the
+ * source settings and the version meta are each read exactly once, with the two
+ * independent reads issued in parallel.
+ */
+async function readProviderListEntry(
+  bucket: R2Bucket,
+  slug: string,
+): Promise<ProviderListEntry | null> {
+  const [stored, settings] = await Promise.all([
+    readStoredLatestPointer(bucket, slug),
+    getProviderSourceSettings(bucket, slug),
+  ]);
+  if (!stored) return null;
+  const pointer = stored.pointer;
+
+  if (isLegacyLatestJson(pointer)) {
+    const meta = await readLegacyProviderMeta(bucket, slug, pointer.versionId);
+    return {
+      slug,
+      name: meta ? meta.providerName : slug,
+      latestVersion: pointer,
+      nodeCount: meta ? meta.nodeCount : 0,
+      sourceHost: meta ? meta.sourceHost : "",
+      sourceUrl: settings.sourceUrl,
+      userAgent: settings.userAgent,
+    };
+  }
+
+  // V1: a single resolve yields both the pointer projection and the list fields.
+  const resolved = await resolveV1Version(
+    bucket,
+    slug,
+    pointer.versionId,
+    pointer,
+  );
+  const meta = projectV1MetaToLegacy(resolved.meta);
+  return {
+    slug,
+    name: meta.providerName,
+    latestVersion: {
+      versionId: pointer.versionId,
+      sha256: meta.sha256,
+      updatedAt: pointer.publishedAt,
+    },
+    nodeCount: meta.nodeCount,
+    sourceHost: meta.sourceHost,
+    sourceUrl: settings.sourceUrl,
+    userAgent: settings.userAgent,
+  };
+}
+
 export async function getAllProviderMeta(
   bucket: R2Bucket,
-): Promise<ProviderListItem[]> {
-  const slugs = await listSlugs(bucket);
+): Promise<ProviderListEntry[]> {
+  // The order document does not depend on the slug list, so both start together
+  // instead of the order read waiting for every provider to finish.
+  const [slugs, order] = await Promise.all([
+    listSlugs(bucket),
+    getProviderOrder(bucket),
+  ]);
   const results = await Promise.all(
-    slugs.map(async (slug): Promise<ProviderListItem | null> => {
-      const latest = await getLatest(bucket, slug);
-      // A provider directory may remain because history/staging is intentionally
-      // retained after removal. Only a current pointer makes it an active list item.
-      if (!latest) return null;
-      let nodeCount = 0;
-      let sourceHost = "";
-      let providerName = slug;
-
-      const meta = await getProviderMeta(bucket, slug, latest.versionId);
-      if (meta) {
-        nodeCount = meta.nodeCount;
-        sourceHost = meta.sourceHost;
-        providerName = meta.providerName;
-      }
-
-      return {
-        slug,
-        name: providerName,
-        latestVersion: latest,
-        nodeCount,
-        sourceHost,
-      } satisfies ProviderListItem;
-    }),
+    slugs.map((slug) => readProviderListEntry(bucket, slug)),
   );
+  // A provider directory may remain because history/staging is intentionally
+  // retained after removal. Only a current pointer makes it an active list item.
   const items = results.filter(
-    (item): item is ProviderListItem => item !== null,
+    (item): item is ProviderListEntry => item !== null,
   );
-  const orderedSlugs = await orderProviderSlugs(
-    bucket,
-    items.map((item) => item.slug),
+  const active = new Set(items.map((item) => item.slug));
+  const ordered = order.filter((slug) => active.has(slug));
+  const included = new Set(ordered);
+  const orderedSlugs = ordered.concat(
+    items
+      .map((item) => item.slug)
+      .filter((slug) => !included.has(slug))
+      .sort(),
   );
   const bySlug = new Map(items.map((item) => [item.slug, item]));
   return orderedSlugs.map((slug) => bySlug.get(slug)!).filter(Boolean);

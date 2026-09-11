@@ -405,6 +405,41 @@ describe("llm-key-store: listing and isolation", () => {
   it("returns null for an unknown slug", async () => {
     expect(await getLlmKey(bucket, "nope")).toBeNull();
   });
+
+  it("lists with one R2 list call and no per-key HEAD", async () => {
+    await createLlmKey(bucket, INSTANCE_SECRET, makeInput(), FIXED_TIME);
+    await createLlmKey(
+      bucket,
+      INSTANCE_SECRET,
+      makeInput({ slug: "mimo-main", apiKey: "sk-mimo-0002" }),
+      FIXED_TIME,
+    );
+
+    const api = mock as unknown as {
+      list(opts?: unknown): Promise<unknown>;
+      head(key: string): Promise<unknown>;
+    };
+    const originalList = api.list.bind(api);
+    const originalHead = api.head.bind(api);
+    let listCalls = 0;
+    let headCalls = 0;
+    api.list = async (opts?: unknown) => {
+      listCalls++;
+      return originalList(opts);
+    };
+    api.head = async (key: string) => {
+      headCalls++;
+      return originalHead(key);
+    };
+
+    const items = await listLlmKeys(bucket);
+
+    expect(items).toHaveLength(2);
+    expect(items.every((item) => item.secretPresent)).toBe(true);
+    // Presence comes from the single listing pass, not a HEAD per credential.
+    expect(listCalls).toBe(1);
+    expect(headCalls).toBe(0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -520,6 +555,30 @@ describe("llm-key-store: reveal", () => {
     await createLlmKey(bucket, INSTANCE_SECRET, makeInput(), FIXED_TIME);
     const result = await revealLlmKey(bucket, INSTANCE_SECRET, "deepseek-main");
     expect(result.apiKey).toBe(API_KEY);
+  });
+
+  it("reads the ciphertext exactly once", async () => {
+    await createLlmKey(bucket, INSTANCE_SECRET, makeInput(), FIXED_TIME);
+
+    const api = mock as unknown as {
+      get(key: string): Promise<unknown>;
+    };
+    const originalGet = api.get.bind(api);
+    let secretReads = 0;
+    api.get = async (key: string) => {
+      if (key === llmSecretKey("deepseek-main")) secretReads++;
+      return originalGet(key);
+    };
+
+    const revealed = await revealLlmKey(
+      bucket,
+      INSTANCE_SECRET,
+      "deepseek-main",
+    );
+
+    expect(revealed.apiKey).toBe(API_KEY);
+    // The integrity hash and the decryption share one read.
+    expect(secretReads).toBe(1);
   });
 
   it("fails closed on a tampered ciphertext", async () => {
