@@ -270,21 +270,24 @@ describe("admin LLM credential UI", () => {
     expect(block).not.toContain("localStorage");
   });
 
-  it("lets the user actually view the key, masked by default", () => {
+  it("keeps the viewer to the key plus copy/close only", () => {
     const html = getAdminHtml();
     const modal = html.slice(
       html.indexOf('id="llm-view-modal"'),
       html.indexOf('id="llm-modal"'),
     );
 
-    expect(modal).toContain("查看密钥");
-    expect(modal).toContain('id="llm-view-name"');
+    expect(modal).toContain("API Key");
     expect(modal).toContain('id="llm-view-secret"');
-    expect(modal).toContain('onclick="toggleLlmPlain()"');
     expect(modal).toContain('onclick="copyLlmPlain()"');
     expect(modal).toContain('onclick="closeLlmView()"');
-    // The value starts masked, never rendered server-side.
-    expect(modal).toContain('<span id="llm-view-secret" class="secret-value">');
+    // Compact popup, and exactly two actions.
+    expect(modal).toContain('class="modal modal-sm"');
+    expect(modal).not.toContain('id="llm-view-name"');
+    expect(modal).not.toContain('id="llm-view-slug"');
+    expect(modal).not.toContain("toggleLlmPlain");
+    expect(modal.match(/<button/g)).toHaveLength(2);
+    // The value is fetched at open time, never rendered server-side.
     expect(modal).not.toContain("apiKey");
 
     // Row action opens the viewer; naming matches what it does.
@@ -294,7 +297,21 @@ describe("admin LLM credential UI", () => {
     expect(html).not.toContain("copyLlmKey");
   });
 
-  it("shows the plaintext instead of only a status line when the clipboard is blocked", () => {
+  it("reveals the full key as soon as the viewer opens", () => {
+    const html = getAdminHtml();
+    const start = html.indexOf("async function openLlmView");
+    const end = html.indexOf("async function copyLlmPlain", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const block = html.slice(start, end);
+
+    // No second confirmation step: opening the popup shows the plaintext.
+    expect(block).toContain("box.textContent = llmViewSecret");
+    expect(block).not.toContain("LLM_MASK");
+    expect(block).not.toContain("显示");
+  });
+
+  it("points at the on-screen value when the clipboard is blocked", () => {
     const html = getAdminHtml();
     const start = html.indexOf("async function copyLlmPlain");
     const end = html.indexOf("function closeLlmView", start);
@@ -302,30 +319,23 @@ describe("admin LLM credential UI", () => {
     expect(end).toBeGreaterThan(start);
     const block = html.slice(start, end);
 
-    // Clipboard failure must fall back to displaying the value, not to a
-    // status message that contains it.
-    expect(block).toContain("llmViewShown = true");
-    expect(block).toContain(
-      "document.getElementById('llm-view-secret').textContent = llmViewSecret",
-    );
-    expect(block).toContain("请手动复制");
+    // The value is already visible, so the fallback must not inject plaintext
+    // into the status line.
+    expect(block).toContain("请长按上方密钥手动复制");
+    expect(block).not.toContain("+ llmViewSecret");
   });
 
-  it("auto-hides the plaintext and clears the variable", () => {
+  it("drops the plaintext when the viewer closes", () => {
     const html = getAdminHtml();
-    const start = html.indexOf("function armLlmViewTimer");
-    const end = html.indexOf("async function openLlmView", start);
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const block = html.slice(start, end);
-
-    expect(block).toContain("}, 30000);");
-    expect(block).toContain("llmViewSecret = null");
-    // Closing the modal must also drop the plaintext.
     const closeStart = html.indexOf("function closeLlmView");
-    const closeBlock = html.slice(closeStart, closeStart + 500);
+    expect(closeStart).toBeGreaterThan(-1);
+    const closeBlock = html.slice(closeStart, closeStart + 400);
+
     expect(closeBlock).toContain("llmViewSecret = null");
-    expect(closeBlock).toContain("clearTimeout(llmViewTimer)");
+    expect(closeBlock).toContain(
+      "document.getElementById('llm-view-secret').textContent = ''",
+    );
+    expect(closeBlock).toContain("classList.remove('show')");
   });
 
   it("wraps long credential values so the modal survives narrow screens", () => {
@@ -335,9 +345,10 @@ describe("admin LLM credential UI", () => {
     expect(html).toContain("word-break: break-all;");
     expect(html).toContain("overflow-wrap: anywhere;");
     expect(html).toContain("user-select: all;");
+    expect(html).toContain(".modal-sm {");
     // Modal action row must be able to wrap on small screens.
     expect(html).toContain(
-      "justify-content:flex-end;margin-top:12px;flex-wrap:wrap",
+      "justify-content:flex-end;margin-top:14px;flex-wrap:wrap",
     );
   });
 });
