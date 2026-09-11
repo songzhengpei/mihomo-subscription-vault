@@ -349,6 +349,13 @@ export function getAdminHtml(): string {
     #providers-list .btn-group,
     #history-list .btn-group { justify-content: flex-end; }
     #llm-keys-list .btn-group { justify-content: flex-end; }
+    /* Mirror the subscription table on narrow screens: keep the action buttons on
+       one line so the table keeps its min-content width and scrolls sideways
+       inside the card instead of squeezing/wrapping. */
+    #llm-keys-list { overflow-x: auto; }
+    #llm-keys-list .btn { white-space: nowrap; }
+    #llm-keys-list th:last-child,
+    #llm-keys-list td:last-child { text-align: right; }
 
     .order-cell { white-space: nowrap; }
 

@@ -221,6 +221,28 @@ describe("admin LLM credential UI", () => {
     expect(pane).not.toContain('id="add-subscription-section"');
   });
 
+  it("mirrors the subscription table's mobile horizontal scroll", () => {
+    const html = getAdminHtml();
+
+    // The subscription list scrolls sideways inside its card; the credential
+    // list must use the exact same three rules or the columns get squeezed.
+    expect(html).toContain(
+      "#providers-list, #history-list { overflow-x: auto; }",
+    );
+    expect(html).toContain("#llm-keys-list { overflow-x: auto; }");
+    expect(html).toContain(
+      "#providers-list .btn, #history-list .btn { white-space: nowrap; }",
+    );
+    expect(html).toContain("#llm-keys-list .btn { white-space: nowrap; }");
+    expect(html).toContain("#llm-keys-list th:last-child,");
+    expect(html).toContain(
+      "#llm-keys-list td:last-child { text-align: right; }",
+    );
+    expect(html).toContain(
+      "#llm-keys-list .btn-group { justify-content: flex-end; }",
+    );
+  });
+
   it("keeps the sealed credential rules in the inline script", () => {
     const html = getAdminHtml();
 
