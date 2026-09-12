@@ -1,11 +1,12 @@
 import jsYaml from "js-yaml";
 import { inflateRawSync } from "node:zlib";
-import type {
-  ClientUpdatePolicy,
-  ProviderDistributionMetadata,
-  ProviderVersionMeta,
-  PublishVersionInput,
-  UnifiedManifest,
+import {
+  expectedProviderNodeCount,
+  type ClientUpdatePolicy,
+  type ProviderDistributionMetadata,
+  type ProviderVersionMeta,
+  type PublishVersionInput,
+  type UnifiedManifest,
 } from "../types.ts";
 import { validateSlug, validateUrl } from "../security/ssrf.ts";
 import { crc32 } from "./zip.ts";
@@ -173,16 +174,16 @@ export async function parseUnifiedImport(
     const profileProviders = profileDoc["proxy-providers"];
     const hasNativeProviders =
       isRecord(profileProviders) && Object.keys(profileProviders).length > 0;
-    // For schemaVersion 1: nodeCount is inline count
-    // For schemaVersion 2: nodeCount is effective count (inline + dependencyRaw - excluded)
-    const expectedInlineCount =
-      meta.schemaVersion === 2 && meta.nodeStats
-        ? meta.nodeStats.inline
-        : meta.nodeCount;
+    // For schemaVersion 1: nodeCount is inline count.
+    // For schemaVersion 2: provider.yaml holds the materialized effective node
+    // set, so `nodeStats.materialized` is authoritative. It is absent on
+    // versions published before materialization existed and on dependencies,
+    // where provider.yaml held the inline proxies only.
+    const expectedProviderCount = expectedProviderNodeCount(meta);
     if (
       !Array.isArray(providerNodes) ||
       providerNodes.length === 0 ||
-      providerNodes.length !== expectedInlineCount ||
+      providerNodes.length !== expectedProviderCount ||
       (!hasNativeProviders &&
         (!Array.isArray(profileNodes) ||
           JSON.stringify(providerNodes) !== JSON.stringify(profileNodes)))
@@ -324,11 +325,9 @@ export async function parseUnifiedImport(
       const depProviderNodes = providerDoc.proxies;
       const depProfileNodes = profileDoc.proxies;
 
-      // For schemaVersion 2, use nodeStats.inline; otherwise use nodeCount
-      const depExpectedCount =
-        meta.schemaVersion === 2 && meta.nodeStats
-          ? meta.nodeStats.inline
-          : meta.nodeCount;
+      // For schemaVersion 2, use the materialized Provider count; otherwise use
+      // nodeCount. Dependencies never carry nodeStats, so both branches agree.
+      const depExpectedCount = expectedProviderNodeCount(meta);
 
       if (
         !Array.isArray(depProviderNodes) ||

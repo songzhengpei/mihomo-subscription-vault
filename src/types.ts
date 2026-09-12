@@ -139,6 +139,34 @@ export interface NodeStats {
   dependencyRaw: number;
   excluded: number;
   effective: number;
+  /**
+   * Number of proxies actually written into provider.yaml.
+   *
+   * For a plain provider subscription this equals `inline`. For a full-config
+   * subscription whose native `proxy-providers` point back at this instance,
+   * provider.yaml is *materialized*: inline non-direct nodes first, then the
+   * resolved (exclude-filtered) nodes of every internal dependency, with
+   * `direct` entries and duplicate names dropped. `materialized` is then the
+   * authoritative count of what `/provider/:slug/:token` serves, and it may be
+   * smaller than `effective` because `direct` placeholders are not nodes.
+   *
+   * Absent on versions published before materialization existed; consumers must
+   * fall back to `inline` (schemaVersion 2) or `nodeCount` in that case.
+   */
+  materialized?: number;
+}
+
+/**
+ * Node count a Provider YAML is expected to contain for this version.
+ *
+ * Newer schemaVersion 2 versions record `nodeStats.materialized`; older ones
+ * only ever served their inline proxies, so `inline` is the correct fallback.
+ */
+export function expectedProviderNodeCount(meta: ProviderVersionMeta): number {
+  if (meta.schemaVersion === 2 && meta.nodeStats) {
+    return meta.nodeStats.materialized ?? meta.nodeStats.inline;
+  }
+  return meta.nodeCount;
 }
 
 export interface ProxyProviderEntry {
@@ -255,7 +283,9 @@ export function hasNodeStats(
     typeof meta.nodeStats.inline === "number" &&
     typeof meta.nodeStats.dependencyRaw === "number" &&
     typeof meta.nodeStats.excluded === "number" &&
-    typeof meta.nodeStats.effective === "number"
+    typeof meta.nodeStats.effective === "number" &&
+    (meta.nodeStats.materialized === undefined ||
+      typeof meta.nodeStats.materialized === "number")
   );
 }
 

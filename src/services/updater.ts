@@ -419,6 +419,46 @@ async function resolveInternalDependency(
   };
 }
 
+/**
+ * Build the materialized proxy list that provider.yaml should serve.
+ *
+ * A full-config subscription keeps its native `proxy-providers`, so its inline
+ * `proxies` are typically hand-written placeholders (for example the three
+ * `DIRECT` variants used by a "直连" group) rather than connectable nodes. A
+ * Provider URL is expected to serve real nodes, so we materialize the effective
+ * node set instead: inline nodes first, then the resolved nodes of every
+ * internal dependency (already exclude-filtered).
+ *
+ * `direct` entries are dropped because they are not connectable proxies, and
+ * duplicate names are dropped because mihomo rejects a Provider holding two
+ * proxies with the same name.
+ */
+export function materializeProviderProxies(
+  inlineProxies: ProxyNode[],
+  dependencyProxies: ProxyNode[],
+): { proxies: ProxyNode[]; droppedDirect: number; droppedDuplicate: number } {
+  const seen = new Set<string>();
+  const proxies: ProxyNode[] = [];
+  let droppedDirect = 0;
+  let droppedDuplicate = 0;
+
+  for (const node of [...inlineProxies, ...dependencyProxies]) {
+    if (String(node.type) === "direct") {
+      droppedDirect += 1;
+      continue;
+    }
+    const name = String(node.name);
+    if (seen.has(name)) {
+      droppedDuplicate += 1;
+      continue;
+    }
+    seen.add(name);
+    proxies.push(node);
+  }
+
+  return { proxies, droppedDirect, droppedDuplicate };
+}
+
 async function computeNodeStats(
   bucket: R2Bucket,
   inlineProxies: ProxyNode[],
@@ -428,6 +468,12 @@ async function computeNodeStats(
 ): Promise<{
   nodeStats: NodeStats;
   internalDependencies: InternalDependencyInfo[];
+  /**
+   * Materialized proxies for provider.yaml, or `null` when the inline proxies
+   * should be published as-is (plain provider, or no internal dependency was
+   * identified).
+   */
+  materializedProxies: ProxyNode[] | null;
 }> {
   const inline = inlineProxies.length;
   const internalRefs = identifyInternalProviders(
@@ -437,15 +483,26 @@ async function computeNodeStats(
   );
 
   if (internalRefs.size === 0) {
+    // Either a plain provider list, or every `proxy-providers` entry points
+    // somewhere other than this instance. Keep the historical behaviour: the
+    // Provider URL serves the inline proxies unchanged, `direct` included.
     return {
-      nodeStats: { inline, dependencyRaw: 0, excluded: 0, effective: inline },
+      nodeStats: {
+        inline,
+        dependencyRaw: 0,
+        excluded: 0,
+        effective: inline,
+        materialized: inline,
+      },
       internalDependencies: [],
+      materializedProxies: null,
     };
   }
 
   let dependencyRaw = 0;
   let excluded = 0;
   const dependencies: InternalDependencyInfo[] = [];
+  const dependencyProxies: ProxyNode[] = [];
   const resolvedSlugs = new Map<
     string,
     {
@@ -475,6 +532,7 @@ async function computeNodeStats(
 
     dependencyRaw += total;
     excluded += excl;
+    dependencyProxies.push(...effective);
 
     resolvedSlugs.set(ref.slug, {
       subscriptionId: resolved.subscriptionId,
@@ -500,9 +558,46 @@ async function computeNodeStats(
 
   const effective = inline + dependencyRaw - excluded;
 
+  const materialized = materializeProviderProxies(
+    inlineProxies,
+    dependencyProxies,
+  );
+
+  // Never publish an empty Provider: if every candidate was dropped (all
+  // `direct`, or nothing survived the exclude-filter) fall back to the inline
+  // proxies so the served content matches pre-materialization releases.
+  let publishedProxies: ProxyNode[] | null = materialized.proxies;
+  if (materialized.proxies.length === 0) {
+    console.warn("provider-materialize:empty-fallback", {
+      inline,
+      dependencyRaw,
+      excluded,
+      droppedDirect: materialized.droppedDirect,
+    });
+    publishedProxies = null;
+  }
+
+  console.info("provider-materialize:applied", {
+    inline,
+    dependencyRaw,
+    excluded,
+    effective,
+    materialized: publishedProxies ? publishedProxies.length : inline,
+    droppedDirect: materialized.droppedDirect,
+    droppedDuplicate: materialized.droppedDuplicate,
+    fallback: publishedProxies === null,
+  });
+
   return {
-    nodeStats: { inline, dependencyRaw, excluded, effective },
+    nodeStats: {
+      inline,
+      dependencyRaw,
+      excluded,
+      effective,
+      materialized: publishedProxies ? publishedProxies.length : inline,
+    },
     internalDependencies: dependencies,
+    materializedProxies: publishedProxies,
   };
 }
 
@@ -641,24 +736,29 @@ export async function updateProvider(
   const publicBaseUrl = (env.PUBLIC_BASE_URL || "").replace(/\/+$/, "");
   const downloadToken = env.DOWNLOAD_TOKEN || "";
 
-  // 4. Generate all three artifacts
-  const providerYaml = generateProviderYaml(validation.proxies);
+  // 4. Resolve internal dependencies so provider.yaml can be materialized
+  const { nodeStats, internalDependencies, materializedProxies } =
+    await computeNodeStats(
+      bucket,
+      validation.proxies,
+      validation.proxyProviders,
+      publicBaseUrl,
+      downloadToken,
+    );
+
+  // 5. Generate all three artifacts.
+  // provider.yaml serves the materialized effective node set (so a full-config
+  // subscription exposes its airports' nodes instead of inline placeholders);
+  // profile.yaml keeps the full config, native `proxy-providers` included.
+  const providerProxies = materializedProxies ?? validation.proxies;
+  const providerYaml = generateProviderYaml(providerProxies);
   const profileYaml = generateProfileYaml(
     validation.proxies,
     validation.fullConfig,
   );
 
-  // 5. Compute uid
+  // 6. Compute uid
   const uid = await storage.computeProfileUid(subscriptionId);
-
-  // 6. Compute nodeStats by resolving internal dependencies
-  const { nodeStats, internalDependencies } = await computeNodeStats(
-    bucket,
-    validation.proxies,
-    validation.proxyProviders,
-    publicBaseUrl,
-    downloadToken,
-  );
 
   // 7. Build distribution metadata
   const subUserinfo =
@@ -679,7 +779,7 @@ export async function updateProvider(
       rawContent: rawText,
       providerYaml,
       profileYaml,
-      nodeCount: nodeStats.effective,
+      nodeCount: providerProxies.length,
       generatorVersion: "1.0.0",
       distribution: {
         providerName,

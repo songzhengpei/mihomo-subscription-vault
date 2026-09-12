@@ -764,7 +764,7 @@ export function getAdminHtml(): string {
       <button class="tab active" data-tab="list">订阅列表</button>
       <button class="tab" data-tab="llm">API Key</button>
       <button class="tab" data-tab="history">历史版本</button>
-      <!-- staging tab hidden — backend APIs preserved, re-add button to restore -->
+      <button class="tab" data-tab="staging">原始快照</button>
       <button class="tab" data-tab="backup">导入导出</button>
     </div>
 
@@ -857,6 +857,22 @@ export function getAdminHtml(): string {
       </div>
     </div>
 
+    <div id="tab-staging" class="tab-content">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">原始快照</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="staging-slug" onchange="loadStaging()" style="padding:8px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;min-width:140px">
+              <option value="">全部订阅</option>
+            </select>
+          </div>
+        </div>
+        <p style="color:var(--text-dim);font-size:14px;margin-bottom:14px">
+          每次抓取上游订阅时保存的原文快照（未经转换、保留注释与锚点）。用于与下载到的完整配置逐行对比排障。
+        </p>
+        <div id="staging-list"></div>
+      </div>
+    </div>
 
 
     <div id="tab-backup" class="tab-content">
@@ -1138,6 +1154,7 @@ export function getAdminHtml(): string {
         const name = tab.dataset.tab;
         if (name === 'list' && !providersLoaded) loadProviders();
         if (name === 'history' && !historyLoaded) loadHistory();
+        if (name === 'staging' && !stagingLoaded) loadStaging();
         if (name === 'backup' && !webdavLoaded) { webdavLoaded = true; loadWebDAVConfig(); }
         if (name === 'llm' && !llmLoaded) { llmLoaded = true; loadLlmKeys({ silent: true }); }
 
@@ -1182,10 +1199,12 @@ export function getAdminHtml(): string {
     let cachedProviders = [];
     let providersLoaded = false;
     let historyLoaded = false;
+    let stagingLoaded = false;
     let webdavLoaded = false;
 
     function invalidateSecondaryViews() {
       historyLoaded = false;
+      stagingLoaded = false;
     }
 
     function renderProviders(providers) {
@@ -1392,7 +1411,7 @@ export function getAdminHtml(): string {
 
     function populateSlugDropdowns(providers) {
       cachedProviders = providers;
-      for (const selectId of ['history-slug']) {
+      for (const selectId of ['history-slug', 'staging-slug']) {
         const sel = document.getElementById(selectId);
         const current = sel.value;
         sel.innerHTML = '<option value="">全部订阅</option>';
@@ -1782,6 +1801,99 @@ export function getAdminHtml(): string {
         URL.revokeObjectURL(a.href);
       } catch (e) {
         alert('下载失败: ' + e.message);
+      }
+    }
+
+    // --- Staging (raw upstream snapshots) ---
+
+    async function loadStaging(options = {}) {
+      stagingLoaded = true;
+      const slug = document.getElementById('staging-slug').value;
+      const el = document.getElementById('staging-list');
+      if (!options.silent) {
+        el.innerHTML = '<div class="empty">加载中...</div>';
+      }
+
+      const slugs = slug ? [slug] : cachedProviders.map(p => p.slug);
+      if (slugs.length === 0) {
+        el.innerHTML = '<div class="empty">暂无订阅</div>';
+        return;
+      }
+
+      let entries = []; // { slug, staging, name }
+      const results = await Promise.all(slugs.map(async s => ({
+        slug: s,
+        response: await api('/api/providers/' + encodeURIComponent(s) + '/staging'),
+      })));
+      for (const result of results) {
+        if (!result.response.ok || !result.response.data) continue;
+        const name = cachedProviders.find(p => p.slug === result.slug)?.name || result.slug;
+        for (const item of result.response.data) {
+          entries.push({ slug: result.slug, staging: item, name });
+        }
+      }
+
+      entries.sort((a, b) => new Date(b.staging.fetchedAt) - new Date(a.staging.fetchedAt));
+
+      if (entries.length === 0) {
+        el.innerHTML = '<div class="empty">暂无原始快照</div>';
+        return;
+      }
+
+      const showSlugCol = !slug;
+      let html = '<table class="table"><thead><tr>';
+      if (showSlugCol) html += '<th>订阅</th>';
+      html += '<th>抓取时间</th><th>请求 ID</th><th>状态</th><th>错误</th><th>操作</th>';
+      html += '</tr></thead><tbody>';
+      for (const e of entries) {
+        const s = e.staging;
+        html += '<tr>';
+        if (showSlugCol) html += '<td class="mono">' + esc(e.slug) + '</td>';
+        html += '<td>' + new Date(s.fetchedAt).toLocaleString() + '</td>';
+        html += '<td class="mono">' + esc(s.requestId) + '</td>';
+        html += '<td>' + (s.status === 'completed' ? '<span class="badge badge-current">已完成</span>' : s.status === 'failed' ? '<span style="color:var(--danger)">失败</span>' : esc(s.status)) + '</td>';
+        html += '<td>' + (s.error ? esc(s.error) : '-') + '</td>';
+        html += '<td><div class="btn-group">';
+        html += '<button class="btn btn-outline btn-sm" onclick="downloadStagingRaw(\\'' + esc(e.slug) + '\\', \\'' + esc(s.requestId) + '\\')">下载原文</button>';
+        html += '<button class="btn btn-outline btn-sm" onclick="deleteStaging(\\'' + esc(e.slug) + '\\', \\'' + esc(s.requestId) + '\\')">删除</button>';
+        html += '</div></td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      el.innerHTML = html;
+    }
+
+    async function downloadStagingRaw(slug, requestId) {
+      try {
+        const resp = await authenticatedFetch('/api/providers/' + encodeURIComponent(slug) + '/staging/' + encodeURIComponent(requestId) + '/raw');
+        if (!resp.ok) {
+          let message = '未知错误';
+          try {
+            const err = await resp.json();
+            message = err.error?.message || message;
+          } catch (_) { /* non-JSON error body */ }
+          alert('下载失败: ' + message);
+          return;
+        }
+        const blob = await resp.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = slug + '-' + requestId + '-raw.txt';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch (e) {
+        alert('下载失败: ' + e.message);
+      }
+    }
+
+    async function deleteStaging(slug, requestId) {
+      if (!confirm('确认删除该原始快照？')) return;
+      const res = await api('/api/providers/' + encodeURIComponent(slug) + '/staging/' + encodeURIComponent(requestId), { method: 'DELETE' });
+      if (res.ok) {
+        showToast('原始快照已删除');
+        loadStaging({ silent: true });
+      } else {
+        alert('删除失败: ' + res.error.message);
       }
     }
 

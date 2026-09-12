@@ -1522,7 +1522,8 @@ function isSameNodeStats(
     a.inline === b.inline &&
     a.dependencyRaw === b.dependencyRaw &&
     a.excluded === b.excluded &&
-    a.effective === b.effective
+    a.effective === b.effective &&
+    a.materialized === b.materialized
   );
 }
 

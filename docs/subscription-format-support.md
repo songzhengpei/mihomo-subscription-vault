@@ -21,6 +21,11 @@
 | SIP008 Shadowsocks JSON        | 支持     | 转成 Mihomo `ss` 节点                           |
 | SSD (`ssd://`)                 | 支持     | 展开默认值和服务器覆盖值，转成 Mihomo `ss` 节点 |
 
+完整 Clash/Mihomo YAML 保留完整配置；当它的原生 `proxy-providers` 指向本实例时，
+`/provider/:slug/:token` 返回的是这些 Provider 解析后的有效节点集（物化），而不是
+配置里手写的 inline `proxies`。详见
+[统一母包方案](unified-subscription-backup-plan.md) 的「Provider 物化」。
+
 表中的 YAML/JSON、URI、SIP008 和 SSD 还支持以下输入变化：
 
 - UTF-8 BOM；

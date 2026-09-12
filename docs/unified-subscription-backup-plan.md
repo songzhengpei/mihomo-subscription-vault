@@ -242,6 +242,33 @@ items:
 3. 任何一个制品生成或校验失败，都不能更新 `latest.json`。
 4. `meta.json` 必须记录两个制品的哈希、大小和生成器版本。
 
+**Provider 物化（完整配置型订阅）：**
+
+完整配置型订阅的 `proxies` 往往是手写的 `DIRECT` 占位节点（例如「🇨🇳 直连 | IPv4
+优先」这一组），真正的节点由它的原生 `proxy-providers` 引入。这类订阅的
+`provider.yaml` **在更新时物化**为有效节点集，而不是直接照搬 `proxies`：
+
+```text
+物化 = [inline 中 type !== 'direct' 的节点]
+     + [每个内部依赖的 provider.yaml 节点，已应用该条目的 exclude-filter]
+     - [重名节点（保留首次出现）]
+```
+
+- 只有 URL 指向本实例 `/provider/:slug/:token`（origin 等于 `PUBLIC_BASE_URL`、
+  token 等于 `DOWNLOAD_TOKEN`）的条目才算内部依赖。
+- 物化在**发布时**完成，不在读取时拼接：`provider.yaml` 仍然是从逻辑模型生成的
+  不可变制品。
+- `direct` 节点被排除，因为它们不是可连接节点；重名节点被排除，因为 mihomo 会
+  拒绝同一 Provider 中出现两个同名代理。
+- 未识别到任何内部依赖，或物化结果为空时，**回退为直接发布 inline `proxies`**
+  （`direct` 一并保留），行为与引入物化之前一致。
+- `nodeStats.materialized` 记录实际写入 `provider.yaml` 的节点数，也就是
+  `/provider/:slug/:token` 真正提供的节点数；`nodeCount` 与之保持一致。
+  `nodeStats.inline` / `dependencyRaw` / `excluded` / `effective` 语义不变，因此
+  `effective` 可能大于 `materialized`（差额是被排除的 `direct` 占位节点）。
+- 该字段缺失表示该版本发布在物化能力之前，消费方必须回退到
+  `nodeStats.inline`（schemaVersion 2）或 `nodeCount`。
+
 ```typescript
 // 统一母包的逻辑数据模型
 interface UnifiedBackup {
@@ -667,6 +694,7 @@ CAS 发布 latest.json（etagMatches: oldLatest.etag）
 - 格式：标准 Mihomo `proxy-providers` 格式
 - 内容：只有 `proxies` 列表
 - 用途：给 Mihomo 内核的 `proxy-providers` 使用
+- 完整配置型订阅的内容是**物化后的有效节点集**，见上文「Provider 物化」
 - 示例：
   ```yaml
   proxies:
@@ -709,7 +737,8 @@ GET /provider/{slug}/{downloadToken}
 HEAD /provider/{slug}/{downloadToken}
 ```
 
-返回 `provider.yaml`（Provider YAML），给 Mihomo `proxy-providers` 使用。
+返回 `provider.yaml`（Provider YAML），给 Mihomo `proxy-providers` 使用。完整配置型
+订阅返回物化后的有效节点集，不再是配置里的 inline `proxies`。
 
 ### 7.2 完整配置 URL（新增）
 
